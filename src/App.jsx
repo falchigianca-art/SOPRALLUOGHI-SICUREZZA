@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Copy, Trash2, Camera, Sparkles, ChevronRight, ChevronDown, FileText, Building2, MapPin, ShieldAlert, Download, Mail, X, Edit3, Search, ArrowLeft, FolderTree, Wand2, Loader2, Settings, Key } from 'lucide-react';
+import { Plus, Copy, Trash2, Camera, Sparkles, ChevronRight, ChevronDown, FileText, Building2, MapPin, ShieldAlert, Download, Mail, X, Edit3, Search, ArrowLeft, ArrowUp, FolderTree, Wand2, Loader2, Settings, Key } from 'lucide-react';
 
 // ============================================================
 //  ARCHIVIO INTERNO PRECARICATO (modificabile)
@@ -783,17 +783,12 @@ const AmbienteCard = ({ ambiente, onChange, onDelete, onDuplicate, archivio, set
       </div>
       {open && (
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Field label="Nome ambiente" required>
-              <div className="flex gap-2">
-                <Input value={ambiente.nome} onChange={v => set('nome', v)} placeholder="es. Reparto produzione" />
-                <Btn size="sm" icon={FolderTree} onClick={() => setPickerAmb(true)}>Archivio</Btn>
-              </div>
-            </Field>
-            <Field label="Ubicazione / piano">
-              <Input value={ambiente.ubicazione} onChange={v => set('ubicazione', v)} placeholder="es. Piano terra, lato est" />
-            </Field>
-          </div>
+          <Field label="Nome ambiente" required>
+            <div className="flex gap-2">
+              <Input value={ambiente.nome} onChange={v => set('nome', v)} placeholder="es. Reparto produzione" />
+              <Btn size="sm" icon={FolderTree} onClick={() => setPickerAmb(true)}>Archivio</Btn>
+            </div>
+          </Field>
           <Field label="Descrizione ambiente">
             <Textarea value={ambiente.descrizione} onChange={v => set('descrizione', v)}
               contesto={`Ambiente di lavoro: ${ambiente.nome}`} rows={2} />
@@ -886,7 +881,7 @@ const generaRelazioneHTML = (sopr) => {
 
   <h2>1. Indice ambienti visitati</h2>
   <ol class="toc">
-    ${sopr.ambienti.map(a => `<li><strong>${a.nome}</strong>${a.ubicazione ? ` — ${a.ubicazione}` : ''} (${a.elementi.length} elementi osservati)</li>`).join('')}
+    ${sopr.ambienti.map(a => `<li><strong>${a.nome}</strong> (${a.elementi.length} elementi osservati)</li>`).join('')}
   </ol>
 
   <h2>2. Ambienti, elementi e rischi rilevati</h2>
@@ -1021,6 +1016,33 @@ const SettingsModal = ({ open, onClose, apiKey, setApiKey }) => {
 // ============================================================
 //  APP PRINCIPALE
 // ============================================================
+// ============================================================
+//  PULSANTE TORNA SU (flottante)
+// ============================================================
+const ScrollToTopButton = () => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 300);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  if (!visible) return null;
+  return (
+    <button
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      title="Torna in cima"
+      aria-label="Torna in cima"
+      className="fixed bottom-5 right-5 z-40 w-12 h-12 bg-stone-900 hover:bg-red-700 text-stone-50 border-2 border-stone-50 shadow-lg flex items-center justify-center transition-all"
+      style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+    >
+      <ArrowUp size={20} strokeWidth={2.5} />
+    </button>
+  );
+};
+
+// ============================================================
+//  APP PRINCIPALE
+// ============================================================
 const initialSopralluogo = () => ({
   id: uid(), azienda: '', sede: '', data: oggi(), tecnico: '',
   conclusioni: '', ambienti: []
@@ -1056,7 +1078,7 @@ export default function App() {
   }, [sopralluogo, archivio, vista, hydrated]);
 
   const aggiungiAmbiente = () => {
-    setSopralluogo(s => ({ ...s, ambienti: [...s.ambienti, { id: uid(), nome: '', ubicazione: '', descrizione: '', foto: [], elementi: [] }] }));
+    setSopralluogo(s => ({ ...s, ambienti: [...s.ambienti, { id: uid(), nome: '', descrizione: '', foto: [], elementi: [] }] }));
   };
   const aggiornaAmbiente = (id, n) => setSopralluogo(s => ({ ...s, ambienti: s.ambienti.map(a => a.id === id ? n : a) }));
   const eliminaAmbiente = (id) => setSopralluogo(s => ({ ...s, ambienti: s.ambienti.filter(a => a.id !== id) }));
@@ -1305,6 +1327,7 @@ export default function App() {
 
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}
           apiKey={apiKey} setApiKey={setApiKey} />
+        <ScrollToTopButton />
       </div>
     </IAContext.Provider>
   );
