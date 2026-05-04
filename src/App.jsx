@@ -58,6 +58,7 @@ const ARCHIVIO_INIZIALE = {
 
 const ESITI = ['conforme', 'non conforme', 'da verificare', 'non applicabile'];
 const STATI_NC = ['aperta', 'in corso', 'chiusa', 'verificata'];
+const PRIORITA = ['Alta', 'Media', 'Bassa'];
 
 // ============================================================
 //  STORAGE (localStorage)
@@ -165,7 +166,47 @@ Rischio "Esposizione a rumore in officina" → ["Sostituzione del compressore es
 
 Restituisci SOLO un array JSON di stringhe, senza markdown, senza numerazioni, senza preamboli.
 
-Genera adesso le misure per: "${contesto}"`
+Genera adesso le misure per: "${contesto}"`,
+
+    misurePreventiveSolo: `Sei un RSPP esperto. Devi proporre SOLO misure PREVENTIVE (di prevenzione) per il rischio indicato, secondo D.Lgs. 81/08 art. 15.
+
+DEFINIZIONE: misure preventive = azioni che ELIMINANO o RIDUCONO il rischio ALLA FONTE prima che si manifesti il danno (NON DPI, NON segnaletica, NON dispositivi di emergenza).
+
+Tipologie di misure preventive:
+- eliminazione del pericolo (es. dismissione di attrezzatura obsoleta)
+- sostituzione (es. sostituire sostanza pericolosa con una meno nociva)
+- misure tecniche alla fonte (es. insonorizzazione, ventilazione, manutenzione, adeguamento elettrico)
+- misure organizzative (es. procedure operative, formazione specifica art. 36-37, sorveglianza sanitaria, pianificazione manutenzioni)
+- limitazioni di esposizione (es. turnazione, riduzione tempi)
+
+RISCHIO: "${contesto}"
+
+ESEMPIO (per "Rischio elettrico su quadro generale"):
+["Adeguamento del quadro elettrico alla norma CEI 64-8 con installazione di interruttore differenziale ad alta sensibilità (Idn ≤30 mA)","Verifica periodica dell'impianto di terra ai sensi del DPR 462/2001 con cadenza biennale","Manutenzione programmata semestrale del quadro con serraggio dei morsetti e termografia","Formazione specifica del personale operante su impianti elettrici (PES/PAV) ai sensi della CEI 11-27","Limitazione dell'accesso al locale quadri al solo personale autorizzato e qualificato"]
+
+Restituisci SOLO un array JSON di 3-5 stringhe, senza markdown, senza preamboli, senza numerazioni.
+
+Genera adesso le misure preventive per: "${contesto}"`,
+
+    misureProtettiveSolo: `Sei un RSPP esperto. Devi proporre SOLO misure PROTETTIVE (di protezione) per il rischio indicato, secondo D.Lgs. 81/08.
+
+DEFINIZIONE: misure protettive = azioni che PROTEGGONO il lavoratore RIDUCENDO LE CONSEGUENZE quando il rischio non può essere eliminato. Sono complementari alle misure preventive.
+
+Tipologie di misure protettive:
+- protezioni collettive (parapetti, barriere, recinzioni, schermature, segregazione, segnaletica di sicurezza UNI EN ISO 7010)
+- DPI specifici (citare categoria e norma tecnica EN, es. "guanti antitaglio EN 388 livello D")
+- segnaletica di sicurezza e cartellonistica
+- dispositivi di emergenza (estintori, kit di primo soccorso, lavaocchi)
+- piani di emergenza ed evacuazione
+
+RISCHIO: "${contesto}"
+
+ESEMPIO (per "Rischio elettrico su quadro generale"):
+["Installazione di segnaletica di pericolo elettrico conforme a UNI EN ISO 7010 (cartello W012) sulle ante del quadro","Predisposizione di chiusura a chiave del quadro elettrico con accesso riservato","Fornitura di DPI dielettrici per personale qualificato: guanti isolanti EN 60903 classe 0 e tappetino isolante EN 61111","Posizionamento di estintore a CO2 da 5 kg in prossimità del quadro per intervento su principio di incendio elettrico","Definizione di procedura LOTO (Lock-Out/Tag-Out) per interventi di manutenzione sull'impianto"]
+
+Restituisci SOLO un array JSON di 3-5 stringhe, senza markdown, senza preamboli, senza numerazioni.
+
+Genera adesso le misure protettive per: "${contesto}"`
   };
   const text = await callGroq(apiKey, prompts[tipo], 1500);
   let clean = text.replace(/```json|```/g, '').trim();
@@ -278,6 +319,7 @@ const Pill = ({ children, color = 'stone' }) => {
 
 const colorEsito = (e) => ({ 'conforme': 'green', 'non conforme': 'red', 'da verificare': 'amber', 'non applicabile': 'gray' }[e] || 'stone');
 const colorStato = (s) => ({ 'aperta': 'red', 'in corso': 'amber', 'chiusa': 'blue', 'verificata': 'green' }[s] || 'stone');
+const colorPriorita = (p) => ({ 'Alta': 'red', 'Media': 'amber', 'Bassa': 'green' }[p] || 'stone');
 
 // ============================================================
 //  MODAL ARCHIVIO
@@ -401,22 +443,39 @@ const RischioCard = ({ rischio, onChange, onDelete, onDuplicate, archivio, setAr
   const { apiKey, openSettings } = React.useContext(IAContext);
   const [open, setOpen] = useState(true);
   const [pickerRischio, setPickerRischio] = useState(false);
-  const [busySugg, setBusySugg] = useState(false);
+  const [busyPrev, setBusyPrev] = useState(false);
+  const [busyProt, setBusyProt] = useState(false);
 
   const set = (k, v) => onChange({ ...rischio, [k]: v });
 
-  const suggerisciMisure = async () => {
-    if (busySugg) return;
+  const generaMisuraPreventiva = async () => {
+    if (busyPrev) return;
     if (!apiKey) { openSettings(); return; }
-    setBusySugg(true);
+    if (!rischio.tipologia && !rischio.descrizione) {
+      alert('Compila prima la tipologia o la descrizione del rischio');
+      return;
+    }
+    setBusyPrev(true);
     try {
-      const sugg = await suggerisciConIA(apiKey, 'misurePreventive', `${rischio.tipologia}: ${rischio.descrizione}`);
-      if (sugg.length > 0) {
-        set('misuraPreventiva', (rischio.misuraPreventiva ? rischio.misuraPreventiva + '\n' : '') + sugg.slice(0, 2).join('\n'));
-        if (sugg.length > 2) set('misuraProtettiva', sugg.slice(2).join('\n'));
-      }
+      const sugg = await suggerisciConIA(apiKey, 'misurePreventiveSolo', `${rischio.tipologia}: ${rischio.descrizione || ''}`);
+      if (sugg.length > 0) set('misuraPreventiva', sugg.join('\n• ').replace(/^/, '• '));
     } catch(e) { alert('Errore IA: ' + e.message); }
-    finally { setBusySugg(false); }
+    finally { setBusyPrev(false); }
+  };
+
+  const generaMisuraProtettiva = async () => {
+    if (busyProt) return;
+    if (!apiKey) { openSettings(); return; }
+    if (!rischio.tipologia && !rischio.descrizione) {
+      alert('Compila prima la tipologia o la descrizione del rischio');
+      return;
+    }
+    setBusyProt(true);
+    try {
+      const sugg = await suggerisciConIA(apiKey, 'misureProtettiveSolo', `${rischio.tipologia}: ${rischio.descrizione || ''}`);
+      if (sugg.length > 0) set('misuraProtettiva', sugg.join('\n• ').replace(/^/, '• '));
+    } catch(e) { alert('Errore IA: ' + e.message); }
+    finally { setBusyProt(false); }
   };
 
   return (
@@ -427,6 +486,7 @@ const RischioCard = ({ rischio, onChange, onDelete, onDuplicate, archivio, setAr
           <Pill color="red">Rischio</Pill>
           <span className="font-medium text-sm truncate">{rischio.tipologia || '— senza tipologia —'}</span>
           {rischio.esito && <Pill color={colorEsito(rischio.esito)}>{rischio.esito}</Pill>}
+          {rischio.priorita && <Pill color={colorPriorita(rischio.priorita)}>{rischio.priorita}</Pill>}
         </button>
         <div className="flex gap-1">
           <Btn size="sm" variant="ghost" icon={Copy} onClick={onDuplicate}>Duplica</Btn>
@@ -435,7 +495,7 @@ const RischioCard = ({ rischio, onChange, onDelete, onDuplicate, archivio, setAr
       </div>
       {open && (
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Field label="Tipologia rischio">
               <div className="flex gap-2">
                 <Input value={rischio.tipologia} onChange={v => set('tipologia', v)} placeholder="Scrivi o seleziona..." />
@@ -445,36 +505,43 @@ const RischioCard = ({ rischio, onChange, onDelete, onDuplicate, archivio, setAr
             <Field label="Esito">
               <Select value={rischio.esito} onChange={v => set('esito', v)} options={ESITI} placeholder="—" />
             </Field>
+            <Field label="Priorità">
+              <Select value={rischio.priorita} onChange={v => set('priorita', v)} options={PRIORITA} placeholder="—" />
+            </Field>
           </div>
           <Field label="Descrizione del rischio">
             <Textarea value={rischio.descrizione} onChange={v => set('descrizione', v)}
               contesto={`Rischio ${rischio.tipologia} in contesto sopralluogo sicurezza`} />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Probabilità">
-              <Select value={rischio.probabilita} onChange={v => set('probabilita', v)} options={['1 - Improbabile','2 - Poco probabile','3 - Probabile','4 - Molto probabile']} placeholder="—" />
-            </Field>
-            <Field label="Gravità">
-              <Select value={rischio.gravita} onChange={v => set('gravita', v)} options={['1 - Lieve','2 - Modesta','3 - Grave','4 - Gravissima']} placeholder="—" />
-            </Field>
-            <Field label="Priorità" hint="P × G">
-              <Input value={rischio.priorita} onChange={v => set('priorita', v)} placeholder="es. 6 - Media" />
-            </Field>
-          </div>
-          <Field label="Evidenza riscontrata">
-            <Textarea value={rischio.evidenza} onChange={v => set('evidenza', v)}
-              contesto={`Evidenza del rischio ${rischio.tipologia}`} rows={2} />
+
+          <Field label="Misura preventiva" hint="Pulsante IA per generare automaticamente">
+            <div className="relative">
+              <textarea value={rischio.misuraPreventiva || ''} onChange={e => set('misuraPreventiva', e.target.value)} rows={3}
+                placeholder="Misure di prevenzione (eliminazione/riduzione del rischio alla fonte). Generabile con IA."
+                className="w-full px-3 py-2 text-sm bg-white border border-stone-300 focus:border-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900 transition-colors resize-y" />
+              <button type="button" onClick={generaMisuraPreventiva} disabled={busyPrev}
+                title="Genera misure preventive con IA secondo D.Lgs. 81/08"
+                className="absolute bottom-2 right-2 text-[10px] uppercase tracking-wider font-semibold px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-400 text-amber-900 disabled:opacity-40 inline-flex items-center gap-1">
+                {busyPrev ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                {busyPrev ? 'Genero...' : 'Genera IA'}
+              </button>
+            </div>
           </Field>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Field label="Misura preventiva">
-              <Textarea value={rischio.misuraPreventiva} onChange={v => set('misuraPreventiva', v)}
-                contesto={`Misura preventiva per rischio ${rischio.tipologia}`} rows={2} />
-            </Field>
-            <Field label="Misura protettiva">
-              <Textarea value={rischio.misuraProtettiva} onChange={v => set('misuraProtettiva', v)}
-                contesto={`Misura protettiva per rischio ${rischio.tipologia}`} rows={2} />
-            </Field>
-          </div>
+
+          <Field label="Misura protettiva" hint="Pulsante IA per generare automaticamente">
+            <div className="relative">
+              <textarea value={rischio.misuraProtettiva || ''} onChange={e => set('misuraProtettiva', e.target.value)} rows={3}
+                placeholder="Misure di protezione (DPI, barriere, segnalazioni). Generabile con IA."
+                className="w-full px-3 py-2 text-sm bg-white border border-stone-300 focus:border-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900 transition-colors resize-y" />
+              <button type="button" onClick={generaMisuraProtettiva} disabled={busyProt}
+                title="Genera misure protettive con IA secondo D.Lgs. 81/08"
+                className="absolute bottom-2 right-2 text-[10px] uppercase tracking-wider font-semibold px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-400 text-amber-900 disabled:opacity-40 inline-flex items-center gap-1">
+                {busyProt ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                {busyProt ? 'Genero...' : 'Genera IA'}
+              </button>
+            </div>
+          </Field>
+
           <Field label="Note">
             <Textarea value={rischio.note} onChange={v => set('note', v)} rows={2} contesto="Note tecniche di sopralluogo" />
           </Field>
@@ -482,9 +549,6 @@ const RischioCard = ({ rischio, onChange, onDelete, onDuplicate, archivio, setAr
             <FotoUploader foto={rischio.foto || []} setFoto={(updater) => set('foto', typeof updater === 'function' ? updater(rischio.foto || []) : updater)} />
           </Field>
           <div className="flex flex-wrap gap-2 pt-2 border-t border-stone-200">
-            <Btn size="sm" variant="accent" icon={Sparkles} onClick={suggerisciMisure} disabled={busySugg}>
-              {busySugg ? 'Sto pensando...' : 'Suggerisci misure (IA)'}
-            </Btn>
             <Btn size="sm" variant="primary" icon={ShieldAlert} onClick={onAggiungiNC}>Genera Non Conformità</Btn>
           </div>
         </div>
@@ -567,8 +631,8 @@ const ElementoCard = ({ elemento, onChange, onDelete, onDuplicate, archivio, set
 
   const aggiungiRischio = (tipologia = '') => {
     set('rischi', [...elemento.rischi, {
-      id: uid(), tipologia, descrizione: '', esito: '', probabilita: '', gravita: '', priorita: '',
-      evidenza: '', misuraPreventiva: '', misuraProtettiva: '', note: '', foto: [], nonConformita: []
+      id: uid(), tipologia, descrizione: '', esito: '', priorita: '',
+      misuraPreventiva: '', misuraProtettiva: '', note: '', foto: [], nonConformita: []
     }]);
   };
 
@@ -579,8 +643,8 @@ const ElementoCard = ({ elemento, onChange, onDelete, onDuplicate, archivio, set
     try {
       const sugg = await suggerisciConIA(apiKey, 'rischi', elemento.nome);
       const nuovi = sugg.map(s => ({
-        id: uid(), tipologia: s, descrizione: '', esito: '', probabilita: '', gravita: '', priorita: '',
-        evidenza: '', misuraPreventiva: '', misuraProtettiva: '', note: '', foto: [], nonConformita: []
+        id: uid(), tipologia: s, descrizione: '', esito: '', priorita: '',
+        misuraPreventiva: '', misuraProtettiva: '', note: '', foto: [], nonConformita: []
       }));
       set('rischi', [...elemento.rischi, ...nuovi]);
     } catch(e) { alert('Errore IA: ' + e.message); }
@@ -597,8 +661,8 @@ const ElementoCard = ({ elemento, onChange, onDelete, onDuplicate, archivio, set
     const r = elemento.rischi.find(x => x.id === idR);
     const nuovaNC = {
       id: uid(), rischioId: idR,
-      descrizione: r.evidenza || r.descrizione || '',
-      norma: '', evidenza: r.evidenza || '', misuraCorrettiva: r.misuraPreventiva || '',
+      descrizione: r.descrizione || r.tipologia || '',
+      norma: '', evidenza: r.descrizione || '', misuraCorrettiva: r.misuraPreventiva || '',
       responsabile: '', scadenza: '', stato: 'aperta', foto: []
     };
     set('rischi', elemento.rischi.map(x => x.id === idR ? { ...x, nonConformita: [...(x.nonConformita || []), nuovaNC] } : x));
@@ -620,20 +684,11 @@ const ElementoCard = ({ elemento, onChange, onDelete, onDuplicate, archivio, set
       </div>
       {open && (
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Field label="Nome elemento osservato">
-              <div className="flex gap-2">
-                <Input value={elemento.nome} onChange={v => set('nome', v)} placeholder="es. Quadro elettrico generale" />
-                <Btn size="sm" icon={FolderTree} onClick={() => setPickerEl(true)}>Archivio</Btn>
-              </div>
-            </Field>
-            <Field label="Tipologia / categoria">
-              <Input value={elemento.tipologia} onChange={v => set('tipologia', v)} placeholder="es. Impianto / Attrezzatura / Postazione" />
-            </Field>
-          </div>
-          <Field label="Descrizione e osservazioni">
-            <Textarea value={elemento.descrizione} onChange={v => set('descrizione', v)}
-              contesto={`Elemento osservato: ${elemento.nome}`} rows={2} />
+          <Field label="Nome elemento osservato">
+            <div className="flex gap-2">
+              <Input value={elemento.nome} onChange={v => set('nome', v)} placeholder="es. Quadro elettrico generale" />
+              <Btn size="sm" icon={FolderTree} onClick={() => setPickerEl(true)}>Archivio</Btn>
+            </div>
           </Field>
           <Field label="Foto">
             <FotoUploader foto={elemento.foto || []} setFoto={(u) => set('foto', typeof u === 'function' ? u(elemento.foto || []) : u)} />
@@ -695,7 +750,7 @@ const AmbienteCard = ({ ambiente, onChange, onDelete, onDuplicate, archivio, set
   const set = (k, v) => onChange({ ...ambiente, [k]: v });
 
   const aggiungiElemento = () => {
-    set('elementi', [...ambiente.elementi, { id: uid(), nome: '', tipologia: '', descrizione: '', foto: [], rischi: [] }]);
+    set('elementi', [...ambiente.elementi, { id: uid(), nome: '', foto: [], rischi: [] }]);
   };
   const aggiornaEl = (id, n) => set('elementi', ambiente.elementi.map(e => e.id === id ? n : e));
   const eliminaEl = (id) => set('elementi', ambiente.elementi.filter(e => e.id !== id));
@@ -839,19 +894,17 @@ const generaRelazioneHTML = (sopr) => {
     <h3>2.${i+1} ${a.nome}</h3>
     ${a.descrizione ? `<p>${a.descrizione}</p>` : ''}
     ${a.elementi.map((e, j) => `
-      <h4>2.${i+1}.${j+1} ${e.nome || 'Elemento'}${e.tipologia ? ` <small>(${e.tipologia})</small>` : ''}</h4>
-      ${e.descrizione ? `<p>${e.descrizione}</p>` : ''}
+      <h4>2.${i+1}.${j+1} ${e.nome || 'Elemento'}</h4>
       ${e.rischi.length > 0 ? `
       <table>
-        <thead><tr><th>Rischio</th><th>Esito</th><th>P</th><th>G</th><th>Priorità</th><th>Evidenza</th></tr></thead>
+        <thead><tr><th>Rischio</th><th>Esito</th><th>Priorità</th><th>Misure preventive</th><th>Misure protettive</th></tr></thead>
         <tbody>
           ${e.rischi.map(r => `<tr>
             <td>${r.tipologia || '—'}<br><small>${r.descrizione || ''}</small></td>
             <td>${r.esito || '—'}</td>
-            <td>${(r.probabilita || '—').split(' - ')[0]}</td>
-            <td>${(r.gravita || '—').split(' - ')[0]}</td>
             <td>${r.priorita || '—'}</td>
-            <td>${r.evidenza || '—'}</td>
+            <td>${(r.misuraPreventiva || '—').replace(/\n/g, '<br>')}</td>
+            <td>${(r.misuraProtettiva || '—').replace(/\n/g, '<br>')}</td>
           </tr>`).join('')}
         </tbody>
       </table>` : '<p><em>Nessun rischio specifico associato.</em></p>'}
