@@ -89,9 +89,9 @@ const callGroq = async (apiKey, prompt, maxTokens = 1000) => {
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       max_tokens: maxTokens,
-      temperature: 0.5,
+      temperature: 0.3,
       messages: [
-        { role: 'system', content: 'Sei un consulente esperto in sicurezza sul lavoro (D.Lgs. 81/2008). Rispondi sempre in italiano tecnico-professionale, conciso e diretto. Quando ti viene chiesto un JSON, restituisci SOLO il JSON valido senza spiegazioni o markdown.' },
+        { role: 'system', content: 'Sei un RSPP/CSE italiano con 20 anni di esperienza in sopralluoghi di sicurezza sul lavoro (D.Lgs. 81/2008, decreti attuativi, norme CEI/UNI/EN). Scrivi sempre in italiano tecnico-professionale, sintetico, con terminologia precisa del settore. Eviti formulazioni generiche e banali. Quando viene chiesto un JSON, restituisci SOLO il JSON valido senza preamboli, spiegazioni o blocchi markdown.' },
         { role: 'user', content: prompt }
       ]
     })
@@ -106,28 +106,68 @@ const callGroq = async (apiKey, prompt, maxTokens = 1000) => {
 
 const migliorаConIA = async (apiKey, testo, contesto) => {
   if (!apiKey) throw new Error('Inserisci la tua chiave API in Impostazioni');
-  const prompt = `Riscrivi il seguente testo in italiano tecnico-professionale, conciso e adatto a una relazione di sopralluogo sicurezza sul lavoro. Mantieni i fatti, migliora la forma. NON aggiungere preamboli o virgolette, restituisci SOLO il testo riscritto.
+  const prompt = `Sei un RSPP che redige relazioni tecniche di sopralluogo. Riscrivi il testo dell'utente trasformandolo in una descrizione tecnica professionale.
 
-Contesto: ${contesto}
-Testo originale: "${testo}"`;
-  return await callGroq(apiKey, prompt, 1000);
+REGOLE OBBLIGATORIE:
+1. Usa terminologia tecnica del settore sicurezza (es. "esposizione" non "rischio per", "elemento osservato" non "cosa", "evidenza riscontrata" non "ho visto")
+2. Aggiungi precisione: SE il testo originale è vago, deduci e specifica (es. "rotto" → "deteriorato con perdita di funzionalità")
+3. Forma impersonale o passiva ("si rileva che...", "risulta assente...", "è stata constatata...")
+4. NIENTE preamboli, NIENTE virgolette attorno alla risposta, NIENTE "Ecco il testo riscritto:"
+5. Mantieni la lunghezza simile all'originale: NON espandere troppo
+6. Cita riferimenti normativi (D.Lgs. 81/08, art. specifici) SOLO se chiaramente pertinenti
+7. NON inventare fatti non presenti nel testo originale
+
+CONTESTO DEL CAMPO: ${contesto}
+TESTO ORIGINALE DELL'UTENTE: "${testo}"
+
+Riscrivi adesso il testo migliorandolo:`;
+  return await callGroq(apiKey, prompt, 800);
 };
 
 const suggerisciConIA = async (apiKey, tipo, contesto) => {
   if (!apiKey) throw new Error('Inserisci la tua chiave API in Impostazioni');
   const prompts = {
-    rischi: `Per il seguente elemento osservato durante un sopralluogo di sicurezza sul lavoro, suggerisci 3-5 rischi specifici pertinenti. Restituisci SOLO un array JSON di stringhe brevi (massimo 4 parole ciascuna), senza altro testo, senza markdown.
-Elemento: "${contesto}"
-Esempio formato: ["Rischio elettrico", "Rischio incendio", "Rischio caduta dall'alto"]`,
-    nonConformita: `Per il seguente rischio rilevato in un sopralluogo sicurezza, suggerisci 1-3 possibili non conformità tipiche con riferimento normativo (D.Lgs. 81/08). Restituisci SOLO un array JSON di oggetti, senza markdown.
-Rischio: "${contesto}"
-Esempio formato: [{"descrizione":"...","norma":"D.Lgs. 81/08 art. 71"}]`,
-    misurePreventive: `Per il seguente rischio in ambito sicurezza sul lavoro, suggerisci 2-4 misure preventive e protettive concrete. Restituisci SOLO un array JSON di stringhe, senza markdown.
-Rischio: "${contesto}"
-Esempio formato: ["Formazione specifica lavoratori", "Manutenzione periodica programmata"]`
+    rischi: `Sei un RSPP/CSE con 20 anni di esperienza. Stai analizzando un elemento osservato durante un sopralluogo aziendale.
+
+ELEMENTO OSSERVATO: "${contesto}"
+
+Genera 4-6 rischi SPECIFICI e CONCRETI riferiti proprio a quell'elemento, NON rischi generici. Ogni rischio deve descrivere una situazione di esposizione reale, citando il meccanismo di danno o le condizioni di pericolo.
+
+ESEMPI di buona qualità (per altro elemento):
+- Elemento "Quadro elettrico generale": ["Contatto diretto con parti in tensione per pannello frontale non chiudibile a chiave", "Innesco di incendio per surriscaldamento di morsetti allentati", "Arco elettrico per cortocircuito su componenti vetusti", "Folgorazione per assenza di interruttore differenziale a monte", "Esposizione a campi elettromagnetici per personale che opera in prossimità prolungata"]
+- Elemento "Carrello elevatore": ["Investimento di pedoni per assenza di percorsi separati", "Ribaltamento per superamento della portata nominale", "Caduta del carico per assenza di forche bloccate", "Schiacciamento operatore tra carrello e scaffalatura", "Esposizione a vibrazioni trasmesse al corpo intero", "Inalazione di gas combusti in ambienti chiusi non ventilati"]
+
+Restituisci SOLO un array JSON di stringhe, senza markdown, senza preamboli, senza numerazioni.
+
+Genera adesso 4-6 rischi specifici per: "${contesto}"`,
+
+    nonConformita: `Sei un RSPP/auditor di sistemi di gestione sicurezza. Stai documentando una non conformità dopo aver rilevato un rischio in sopralluogo.
+
+RISCHIO RILEVATO: "${contesto}"
+
+Genera 1-3 non conformità che TIPICAMENTE si riscontrano per questo rischio, con riferimento normativo PRECISO (D.Lgs. 81/08, decreti attuativi, norme tecniche CEI/UNI). Ogni descrizione deve indicare il difetto specifico, non genericità.
+
+ESEMPIO buona qualità (per altro rischio):
+Rischio "Caduta dall'alto" → [{"descrizione":"Assenza di parapetti normati su passerella sopraelevata, parametri non conformi (altezza < 1m, mancanza corrente intermedio e fascia fermapiede)","norma":"D.Lgs. 81/08 Allegato IV punto 1.7.2.1; UNI EN ISO 14122-3"},{"descrizione":"Utilizzo di scala portatile per lavori prolungati senza sistemi anticaduta o linea vita","norma":"D.Lgs. 81/08 art. 113 e art. 115"}]
+
+Restituisci SOLO un array JSON di oggetti {"descrizione":"...","norma":"..."}, senza markdown, senza altro testo.
+
+Genera adesso le non conformità per: "${contesto}"`,
+
+    misurePreventive: `Sei un RSPP esperto. Devi proporre misure preventive e protettive PRATICHE, ATTUABILI e SPECIFICHE per il rischio osservato (NON frasi generiche tipo "informare i lavoratori").
+
+RISCHIO: "${contesto}"
+
+Genera 3-5 misure CONCRETE seguendo la gerarchia D.Lgs. 81/08 art. 15: 1) eliminazione del pericolo, 2) sostituzione, 3) misure tecniche/collettive, 4) misure organizzative/procedurali, 5) DPI come ultimo ricorso. Ogni misura deve essere attuabile e verificabile.
+
+ESEMPIO buona qualità (per altro rischio):
+Rischio "Esposizione a rumore in officina" → ["Sostituzione del compressore esistente con modello insonorizzato (LpA <80 dB(A))","Installazione di pannelli fonoassorbenti sulle pareti del locale compressori","Confinamento della sorgente con cabina insonorizzante e segnalazione di zona ad accesso limitato","Turnazione del personale per ridurre l'esposizione giornaliera al di sotto di 80 dB(A)","Fornitura di otoprotettori SNR≥27 dB con sorveglianza sanitaria audiometrica annuale"]
+
+Restituisci SOLO un array JSON di stringhe, senza markdown, senza numerazioni, senza preamboli.
+
+Genera adesso le misure per: "${contesto}"`
   };
-  const text = await callGroq(apiKey, prompts[tipo], 800);
-  // Pulizia robusta: rimuove markdown, estrae il primo array JSON
+  const text = await callGroq(apiKey, prompts[tipo], 1500);
   let clean = text.replace(/```json|```/g, '').trim();
   const match = clean.match(/\[[\s\S]*\]/);
   if (match) clean = match[0];
