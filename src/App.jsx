@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Copy, Trash2, Camera, Sparkles, ChevronRight, ChevronDown, FileText, Building2, MapPin, ShieldAlert, Download, Mail, X, Edit3, Search, ArrowLeft, ArrowUp, FolderTree, Wand2, Loader2, Settings, Key } from 'lucide-react';
+import { Plus, Copy, Trash2, Camera, Sparkles, ChevronRight, ChevronDown, FileText, Building2, MapPin, ShieldAlert, Download, Mail, X, Edit3, Search, ArrowLeft, ArrowUp, ArrowDown, FolderTree, Wand2, Loader2, Settings, Key } from 'lucide-react';
 
 // ============================================================
 //  ARCHIVIO INTERNO PRECARICATO (modificabile)
@@ -1017,25 +1017,52 @@ const SettingsModal = ({ open, onClose, apiKey, setApiKey }) => {
 //  APP PRINCIPALE
 // ============================================================
 // ============================================================
-//  PULSANTE TORNA SU (flottante)
+//  PULSANTI NAVIGAZIONE FLOTTANTI (su / giù)
 // ============================================================
-const ScrollToTopButton = () => {
-  const [visible, setVisible] = useState(false);
+const ScrollNavButtons = () => {
+  const [direction, setDirection] = useState(null); // 'up' | 'down' | null
+
   useEffect(() => {
-    const onScroll = () => setVisible(window.scrollY > 300);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    const update = () => {
+      const scrollY = window.scrollY;
+      const viewport = window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+      const distanceFromBottom = docHeight - (scrollY + viewport);
+
+      // Se non c'è abbastanza contenuto per scrollare, nascondi
+      if (docHeight - viewport < 200) { setDirection(null); return; }
+      // Vicino al fondo (meno di 100px) → mostra solo "su"
+      if (distanceFromBottom < 100) { setDirection('up'); return; }
+      // Vicino all'inizio (sotto 200px) → mostra solo "giù"
+      if (scrollY < 200) { setDirection('down'); return; }
+      // Nel mezzo → mostra il più utile in base alla direzione: se siamo nella prima metà, "giù"; altrimenti "su"
+      if (scrollY < docHeight / 2) setDirection('down');
+      else setDirection('up');
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
   }, []);
-  if (!visible) return null;
+
+  if (!direction) return null;
+
+  const goUp = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  const goDown = () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+
+  const isUp = direction === 'up';
   return (
     <button
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-      title="Torna in cima"
-      aria-label="Torna in cima"
-      className="fixed bottom-5 right-5 z-40 w-12 h-12 bg-stone-900 hover:bg-red-700 text-stone-50 border-2 border-stone-50 shadow-lg flex items-center justify-center transition-all"
+      onClick={isUp ? goUp : goDown}
+      title={isUp ? 'Torna in cima' : 'Vai in fondo'}
+      aria-label={isUp ? 'Torna in cima' : 'Vai in fondo'}
+      className="fixed bottom-5 right-5 z-40 w-12 h-12 bg-stone-900 hover:bg-red-700 text-stone-50 border-2 border-stone-50 flex items-center justify-center transition-all"
       style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
     >
-      <ArrowUp size={20} strokeWidth={2.5} />
+      {isUp ? <ArrowUp size={20} strokeWidth={2.5} /> : <ArrowDown size={20} strokeWidth={2.5} />}
     </button>
   );
 };
@@ -1327,7 +1354,7 @@ export default function App() {
 
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}
           apiKey={apiKey} setApiKey={setApiKey} />
-        <ScrollToTopButton />
+        <ScrollNavButtons />
       </div>
     </IAContext.Provider>
   );
