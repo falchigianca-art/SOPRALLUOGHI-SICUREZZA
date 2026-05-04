@@ -76,21 +76,24 @@ const saveState = (state) => {
 };
 
 // ============================================================
-//  IA — chiamata diretta all'API Anthropic con chiave utente
+//  IA — chiamata diretta all'API Groq (free tier) con chiave utente
+//  Modello: llama-3.3-70b-versatile
 // ============================================================
-const callClaude = async (apiKey, prompt, maxTokens = 1000) => {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+const callGroq = async (apiKey, prompt, maxTokens = 1000) => {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
+      'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'llama-3.3-70b-versatile',
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }]
+      temperature: 0.5,
+      messages: [
+        { role: 'system', content: 'Sei un consulente esperto in sicurezza sul lavoro (D.Lgs. 81/2008). Rispondi sempre in italiano tecnico-professionale, conciso e diretto. Quando ti viene chiesto un JSON, restituisci SOLO il JSON valido senza spiegazioni o markdown.' },
+        { role: 'user', content: prompt }
+      ]
     })
   });
   if (!res.ok) {
@@ -98,29 +101,36 @@ const callClaude = async (apiKey, prompt, maxTokens = 1000) => {
     throw new Error(`API ${res.status}: ${err.slice(0, 200)}`);
   }
   const data = await res.json();
-  return data.content.map(c => c.text || '').join('').trim();
+  return (data.choices?.[0]?.message?.content || '').trim();
 };
 
 const migliorаConIA = async (apiKey, testo, contesto) => {
   if (!apiKey) throw new Error('Inserisci la tua chiave API in Impostazioni');
-  const prompt = `Sei un consulente esperto in sicurezza sul lavoro (D.Lgs. 81/2008). Riscrivi il seguente testo in italiano tecnico-professionale, conciso e adatto a una relazione di sopralluogo. Mantieni i fatti, migliora la forma. NON aggiungere preamboli, restituisci SOLO il testo riscritto.
+  const prompt = `Riscrivi il seguente testo in italiano tecnico-professionale, conciso e adatto a una relazione di sopralluogo sicurezza sul lavoro. Mantieni i fatti, migliora la forma. NON aggiungere preamboli o virgolette, restituisci SOLO il testo riscritto.
 
 Contesto: ${contesto}
-Testo originale: "${testo}"
-
-Testo riscritto:`;
-  return await callClaude(apiKey, prompt, 1000);
+Testo originale: "${testo}"`;
+  return await callGroq(apiKey, prompt, 1000);
 };
 
 const suggerisciConIA = async (apiKey, tipo, contesto) => {
   if (!apiKey) throw new Error('Inserisci la tua chiave API in Impostazioni');
   const prompts = {
-    rischi: `Per il seguente elemento osservato durante un sopralluogo di sicurezza, suggerisci 3-5 rischi specifici pertinenti. Restituisci SOLO un array JSON di stringhe brevi, senza altro testo. Elemento: "${contesto}"`,
-    nonConformita: `Per il seguente rischio rilevato, suggerisci 1-3 possibili non conformità tipiche con riferimento normativo (D.Lgs. 81/08). Restituisci SOLO un array JSON di oggetti {"descrizione": "...", "norma": "..."}. Rischio: "${contesto}"`,
-    misurePreventive: `Per il seguente rischio, suggerisci 2-4 misure preventive e protettive concrete. Restituisci SOLO un array JSON di stringhe. Rischio: "${contesto}"`
+    rischi: `Per il seguente elemento osservato durante un sopralluogo di sicurezza sul lavoro, suggerisci 3-5 rischi specifici pertinenti. Restituisci SOLO un array JSON di stringhe brevi (massimo 4 parole ciascuna), senza altro testo, senza markdown.
+Elemento: "${contesto}"
+Esempio formato: ["Rischio elettrico", "Rischio incendio", "Rischio caduta dall'alto"]`,
+    nonConformita: `Per il seguente rischio rilevato in un sopralluogo sicurezza, suggerisci 1-3 possibili non conformità tipiche con riferimento normativo (D.Lgs. 81/08). Restituisci SOLO un array JSON di oggetti, senza markdown.
+Rischio: "${contesto}"
+Esempio formato: [{"descrizione":"...","norma":"D.Lgs. 81/08 art. 71"}]`,
+    misurePreventive: `Per il seguente rischio in ambito sicurezza sul lavoro, suggerisci 2-4 misure preventive e protettive concrete. Restituisci SOLO un array JSON di stringhe, senza markdown.
+Rischio: "${contesto}"
+Esempio formato: ["Formazione specifica lavoratori", "Manutenzione periodica programmata"]`
   };
-  const text = await callClaude(apiKey, prompts[tipo], 800);
-  const clean = text.replace(/```json|```/g, '').trim();
+  const text = await callGroq(apiKey, prompts[tipo], 800);
+  // Pulizia robusta: rimuove markdown, estrae il primo array JSON
+  let clean = text.replace(/```json|```/g, '').trim();
+  const match = clean.match(/\[[\s\S]*\]/);
+  if (match) clean = match[0];
   try { return JSON.parse(clean); } catch { return []; }
 };
 
@@ -892,16 +902,16 @@ const SettingsModal = ({ open, onClose, apiKey, setApiKey }) => {
         </div>
         <div className="p-5 space-y-4">
           <div className="bg-amber-50 border border-amber-300 p-3 text-xs text-amber-900 leading-relaxed">
-            Per usare le funzioni di intelligenza artificiale ("Migliora con IA", "Suggerisci rischi", ecc.) serve una chiave API personale di Anthropic.
+            Per usare le funzioni di intelligenza artificiale ("Migliora con IA", "Suggerisci rischi", ecc.) serve una chiave API personale di <strong>Groq</strong> (gratuita).
             La chiave resta salvata <strong>solo nel tuo browser</strong> (localStorage), non viene mai inviata altrove.
           </div>
-          <Field label="Chiave API Anthropic">
+          <Field label="Chiave API Groq">
             <input type="password" value={val} onChange={e => setVal(e.target.value)}
-              placeholder="sk-ant-..."
+              placeholder="gsk_..."
               className="w-full px-3 py-2 text-sm bg-white border border-stone-300 focus:border-stone-900 focus:outline-none font-mono" />
           </Field>
           <div className="text-xs text-stone-600">
-            Ottieni una chiave da <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" className="underline">console.anthropic.com/settings/keys</a>.
+            Ottieni una chiave gratuita da <a href="https://console.groq.com/keys" target="_blank" rel="noopener" className="underline">console.groq.com/keys</a>.
             Senza chiave puoi usare l'app normalmente, le funzioni IA saranno disattivate.
           </div>
           <div className="flex gap-2 pt-2">
