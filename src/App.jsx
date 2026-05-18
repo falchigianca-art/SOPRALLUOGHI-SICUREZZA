@@ -49,34 +49,44 @@ const Inp = ({ value, onChange, placeholder, type="text", rows, disabled }) => {
 };
 
 const SelLibero = ({ value, valueCustom, onChange, onChangeCustom, options, placeholder, label }) => {
-  const [open, setOpen] = useState(false);
-  const displayVal = value === "__custom__" ? (valueCustom || "✏️ Scrivi...") : (value || placeholder || "Seleziona...");
-  const select = (v) => { onChange(v); if(v !== "__custom__") onChangeCustom(""); setOpen(false); };
+  // Usa select nativo — funziona su tutti i dispositivi senza problemi di z-index
+  const allOptions = [...options, "__custom__"];
+  const handleChange = (e) => {
+    const v = e.target.value;
+    onChange(v);
+    if (v !== "__custom__") onChangeCustom("");
+  };
   return (
-    <div style={{position:"relative"}}>
-      <button type="button" onClick={()=>setOpen(!open)}
-        style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${open?T.accent:T.border}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",color:value?T.text:T.muted,boxSizing:"border-box",textAlign:"left"}}>
-        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{displayVal}</span>
-        <ChevronDown size={14} style={{flexShrink:0,marginLeft:6,color:T.muted,transform:open?"rotate(180deg)":"none",transition:"transform 0.15s"}}/>
-      </button>
-      {open && (
-        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:`1px solid ${T.accent}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:100,maxHeight:220,overflowY:"auto",marginTop:2}}>
-          {options.map(o=>(
-            <button key={o} type="button" onClick={()=>select(o)}
-              style={{width:"100%",padding:"9px 12px",fontSize:13,border:"none",background:value===o?"#FEF2F2":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit",color:value===o?T.accent:T.text,fontWeight:value===o?700:400,borderBottom:`1px solid ${T.border}`}}>
-              {o}
-            </button>
-          ))}
-          <button type="button" onClick={()=>{ onChange("__custom__"); setOpen(false); }}
-            style={{width:"100%",padding:"9px 12px",fontSize:13,border:"none",background:value==="__custom__"?"#F5F3FF":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit",color:T.purple,fontWeight:700}}>
-            ✏️ Scrivi manualmente...
-          </button>
-        </div>
-      )}
-      {value==="__custom__" && (
-        <input value={valueCustom} onChange={e=>onChangeCustom(e.target.value)}
+    <div>
+      <select
+        value={value}
+        onChange={handleChange}
+        style={{
+          width:"100%", padding:"10px 12px", fontSize:14, borderRadius:8,
+          border:`2px solid ${value ? T.accent : T.border}`,
+          outline:"none", fontFamily:"inherit",
+          color: value ? T.text : T.muted,
+          background:"#fff", boxSizing:"border-box",
+          WebkitAppearance:"auto", appearance:"auto"
+        }}
+      >
+        <option value="">{placeholder || "Seleziona..."}</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="__custom__">✏️ Scrivi manualmente...</option>
+      </select>
+      {value === "__custom__" && (
+        <input
+          value={valueCustom}
+          onChange={e => onChangeCustom(e.target.value)}
           placeholder={`Inserisci ${label||"valore"}...`}
-          style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.accent}`,outline:"none",fontFamily:"inherit",color:T.text,background:"#fff",boxSizing:"border-box",marginTop:6}}/>
+          autoFocus
+          style={{
+            width:"100%", padding:"10px 12px", fontSize:14, borderRadius:8,
+            border:`2px solid ${T.accent}`, outline:"none",
+            fontFamily:"inherit", color:T.text, background:"#fff",
+            boxSizing:"border-box", marginTop:8
+          }}
+        />
       )}
     </div>
   );
