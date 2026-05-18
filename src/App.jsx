@@ -48,21 +48,39 @@ const Inp = ({ value, onChange, placeholder, type="text", rows, disabled }) => {
   return <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={b}/>;
 };
 
-const SelLibero = ({ value, valueCustom, onChange, onChangeCustom, options, placeholder, label }) => (
-  <div>
-    <select value={value} onChange={e=>{ onChange(e.target.value); if(e.target.value!=="__custom__") onChangeCustom(""); }}
-      style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.border}`,outline:"none",fontFamily:"inherit",color:value?T.text:T.muted,background:"#fff",boxSizing:"border-box"}}>
-      {placeholder&&<option value="">{placeholder}</option>}
-      {options.map(o=><option key={o} value={o}>{o}</option>)}
-      <option value="__custom__">✏️ Scrivi manualmente...</option>
-    </select>
-    {value==="__custom__" && (
-      <input value={valueCustom} onChange={e=>onChangeCustom(e.target.value)}
-        placeholder={`Inserisci ${label||"valore"}...`} autoFocus
-        style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.accent}`,outline:"none",fontFamily:"inherit",color:T.text,background:"#fff",boxSizing:"border-box",marginTop:6}}/>
-    )}
-  </div>
-);
+const SelLibero = ({ value, valueCustom, onChange, onChangeCustom, options, placeholder, label }) => {
+  const [open, setOpen] = useState(false);
+  const displayVal = value === "__custom__" ? (valueCustom || "✏️ Scrivi...") : (value || placeholder || "Seleziona...");
+  const select = (v) => { onChange(v); if(v !== "__custom__") onChangeCustom(""); setOpen(false); };
+  return (
+    <div style={{position:"relative"}}>
+      <button type="button" onClick={()=>setOpen(!open)}
+        style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${open?T.accent:T.border}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",color:value?T.text:T.muted,boxSizing:"border-box",textAlign:"left"}}>
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{displayVal}</span>
+        <ChevronDown size={14} style={{flexShrink:0,marginLeft:6,color:T.muted,transform:open?"rotate(180deg)":"none",transition:"transform 0.15s"}}/>
+      </button>
+      {open && (
+        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:`1px solid ${T.accent}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:100,maxHeight:220,overflowY:"auto",marginTop:2}}>
+          {options.map(o=>(
+            <button key={o} type="button" onClick={()=>select(o)}
+              style={{width:"100%",padding:"9px 12px",fontSize:13,border:"none",background:value===o?"#FEF2F2":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit",color:value===o?T.accent:T.text,fontWeight:value===o?700:400,borderBottom:`1px solid ${T.border}`}}>
+              {o}
+            </button>
+          ))}
+          <button type="button" onClick={()=>{ onChange("__custom__"); setOpen(false); }}
+            style={{width:"100%",padding:"9px 12px",fontSize:13,border:"none",background:value==="__custom__"?"#F5F3FF":"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit",color:T.purple,fontWeight:700}}>
+            ✏️ Scrivi manualmente...
+          </button>
+        </div>
+      )}
+      {value==="__custom__" && (
+        <input value={valueCustom} onChange={e=>onChangeCustom(e.target.value)}
+          placeholder={`Inserisci ${label||"valore"}...`}
+          style={{width:"100%",padding:"8px 12px",fontSize:13,borderRadius:8,border:`1px solid ${T.accent}`,outline:"none",fontFamily:"inherit",color:T.text,background:"#fff",boxSizing:"border-box",marginTop:6}}/>
+      )}
+    </div>
+  );
+};
 
 const Fld   = ({ label, children }) => <div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</div>{children}</div>;
 const Card  = ({ children, style={} }) => <div style={{background:"#fff",borderRadius:12,border:`1px solid ${T.border}`,marginBottom:12,...style}}>{children}</div>;
@@ -74,18 +92,45 @@ const callAI = async (prompt) => {
   if (!k) throw new Error("NO_KEY");
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
-    headers:{"Content-Type":"application/json","x-api-key":k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:prompt}]})
+    headers:{
+      "Content-Type":"application/json",
+      "x-api-key": k,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body:JSON.stringify({
+      model:"claude-sonnet-4-20250514",
+      max_tokens:800,
+      messages:[{role:"user",content:prompt}]
+    })
   });
+  if(!r.ok) {
+    const err = await r.text();
+    throw new Error("API_ERR: "+r.status+" "+err.slice(0,120));
+  }
   const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
+  if(d.error) throw new Error(d.error.message||JSON.stringify(d.error));
   return d.content?.find(b=>b.type==="text")?.text||"";
 };
 
 const AIBtn = ({ prompt, onResult, label="IA", onNoKey }) => {
-  const [loading,setLoading] = useState(false);
-  const run = async () => { setLoading(true); try { onResult(await callAI(prompt)); } catch(e){ if(e.message==="NO_KEY"&&onNoKey) onNoKey(); } finally { setLoading(false); } };
-  return <Btn v="ai" sz="xs" onClick={run} disabled={loading} icon={loading?<Loader2 size={11} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={11}/>}>{label}</Btn>;
+  const [loading, setLoading] = useState(false);
+  const [errMsg,  setErrMsg]  = useState("");
+  const run = async () => {
+    setLoading(true); setErrMsg("");
+    try { onResult(await callAI(prompt)); }
+    catch(e) {
+      if(e.message==="NO_KEY" && onNoKey) onNoKey();
+      else setErrMsg(e.message||"Errore");
+    }
+    finally { setLoading(false); }
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+      <Btn v="ai" sz="xs" onClick={run} disabled={loading} icon={loading?<Loader2 size={11} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={11}/>}>{label}</Btn>
+      {errMsg && <span style={{fontSize:10,color:T.err,maxWidth:120}}>{errMsg.slice(0,60)}</span>}
+    </div>
+  );
 };
 
 // ── MODALE IA ───────────────────────────────────────────────
