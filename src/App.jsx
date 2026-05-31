@@ -1,901 +1,736 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  Shield, Plus, Trash2, Camera, X, ChevronDown, ChevronRight, FileText,
-  Download, Sparkles, Settings, ArrowLeft
-} from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Camera, Sparkles, ArrowLeft, X, Shield, MapPin, AlertTriangle, FileText, Loader2, Image, Key, Copy, FolderOpen, Save, Upload, Download, RefreshCw, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
-/* ============================================================
-   SOPRALLUOGHI SICUREZZA — ICHNOSSICUREZZA S.R.L.
-   Formato verbale: Reparto → Criticità (allineato alla skill
-   verbale-sopralluogo-ichnossicurezza). Output HTML stampabile.
-   ============================================================ */
-
-// ── PALETTE / TEMA ───────────────────────────────────────────
+// ── TEMA ─────────────────────────────────────────────────────
 const T = {
-  bg:      "#f7f4ef",      // sabbia chiaro
-  card:    "#ffffff",
-  paper:   "#fdfbf7",
-  ink:     "#1a1614",
-  muted:   "#7a736b",
-  border:  "#e4ddd2",
-  accent:  "#b91c1c",      // rosso Ichnos
-  accentDk:"#7f1313",
-  red:     "#b91c1c", redBg: "#fde8e8",
-  orange:  "#d97706", orangeBg:"#fef3c7",
-  green:   "#15803d", greenBg: "#d1fae5",
-  yellow:  "#b45309", yellowBg:"#fef3c7",
+  bg:"#F5F2ED", border:"#DDD8CF", accent:"#B91C1C", text:"#1C1917", muted:"#78716C",
+  ok:"#15803D", okBg:"#F0FDF4", warn:"#B45309", warnBg:"#FFFBEB",
+  err:"#B91C1C", errBg:"#FEF2F2", blue:"#1D4ED8", blueBg:"#EFF6FF", purple:"#6D28D9",
 };
 
-// ── LIVELLI ──────────────────────────────────────────────────
-const LIVELLI = [
-  { val: "ELEVATA", label: "🔴 ELEVATA", color: T.red,    bg: T.redBg,    desc: "Intervento urgente e inderogabile" },
-  { val: "MEDIA",   label: "🟠 MEDIA",   color: T.orange, bg: T.orangeBg, desc: "Intervento a breve termine" },
-  { val: "LIEVE",   label: "🟢 LIEVE",   color: T.green,  bg: T.greenBg,  desc: "Intervento di miglioramento" },
-];
-const lvlInfo = (v) => LIVELLI.find(l => l.val === v) || LIVELLI[1];
+// ── DATI ─────────────────────────────────────────────────────
+const GRAVITA  = ["Bassa","Media","Alta","Critica"];
+const PROB     = ["Improbabile","Possibile","Probabile","Quasi certa"];
+const TIPI     = ["Periodico","Straordinario","Primo sopralluogo","Follow-up NC","Audit interno","Pre-appalto (DUVRI)"];
+const AMBIENTI = ["Ufficio amministrativo","Ufficio tecnico","Sala riunioni","Reception / ingresso","Corridoio","Reparto produttivo","Magazzino","Officina meccanica","Laboratorio","Mensa / refettorio","Cucina","Spogliatoi","Servizi igienici","Archivio","Server room","Locale tecnico","Cabina elettrica","Centrale termica","Locale compressori","Area carico/scarico","Cortile / area esterna","Parcheggio","Piano interrato","Terrazza / tetto","Camera degenza","Sala visita","Pronto soccorso","Sala operatoria","Aula scolastica","Palestra","Biblioteca","Negozio / showroom"];
+const ELEMENTI = ["Scaffalatura metallica","Scaffalatura in legno","Soppalco","Pavimentazione interna","Pavimentazione esterna","Scala fissa","Scala portatile","Scala a pioli","Trabattello / ponteggio","Passerella","Parapetto","Quadro elettrico generale","Quadro elettrico secondario","Impianto di terra","Illuminazione ordinaria","Illuminazione emergenza","Impianto sprinkler","Rilevazione incendi","Estintore portatile","Estintore carrellato","Idrante UNI 45","Idrante UNI 70","Uscita di emergenza","Segnaletica sicurezza","Postazione VDT","Sedia ergonomica","Carrello elevatore","Transpallet manuale","Transpallet elettrico","Gru a ponte","Trapano","Mola angolare","Sega circolare","Tornio","Compressore","Caldaia","Impianto gas","Armadio prodotti chimici","DPI in dotazione","Cassetta pronto soccorso","Defibrillatore (DAE)","Porte REI","Cancello automatico"];
+const RISCHI   = ["Elettrico","Incendio","Esplosione","Chimico","Biologico","Rumore","Vibrazioni","Videoterminali (VDT)","Movimentazione manuale carichi","Posture scorrette","Caduta dall'alto","Scivolamento / inciampo","Investimento da mezzi","Taglio / abrasione","Schiacciamento","Microclima","Illuminazione insufficiente","Polveri e aerosol","Stress lavoro-correlato","Lavori in quota","Interferenze (DUVRI)","Emergenza / evacuazione","Agenti cancerogeni","Amianto","Radiazioni","Spazi confinati","ATEX"];
 
-// ── TIPI DI REITERAZIONE ─────────────────────────────────────
-const REITER = [
-  { val: "NESSUNA",   label: "— Nessuna (criticità nuova)" },
-  { val: "SEMPLICE",  label: "⚠ Reiterato (semplice)" },
-  { val: "ESTESO",    label: "⚠ Reiterato — non risolto" },
-  { val: "AGGRAVATO", label: "⚠ Reiterato e AGGRAVATO" },
-  { val: "PARZIALE",  label: "⚠ Reiterato parzialmente" },
-];
+// ── UTILS ─────────────────────────────────────────────────────
+const uid    = () => Math.random().toString(36).slice(2,9);
+const oggi   = () => new Date().toISOString().split("T")[0];
+const nM     = (v,l) => v==="__L__" ? l : v;
+const DB_KEY = "ichno_sopr_list";
+const AK     = "ichno_ak";
+const akGet  = () => localStorage.getItem(AK)||"";
+const akSet  = (k) => localStorage.setItem(AK,k);
+const dbLoad = () => { try { return JSON.parse(localStorage.getItem(DB_KEY)||"[]"); } catch { return []; } };
+const dbSave = (list) => { try { localStorage.setItem(DB_KEY,JSON.stringify(list)); } catch(e) { alert("Spazio insufficiente nel browser. Elimina sopralluoghi vecchi."); } };
 
-// ── REPARTI SUGGERITI ────────────────────────────────────────
-const REPARTI_SUGG = [
-  "UFFICI", "UFFICI - DOTAZIONI ANTINCENDIO",
-  "IMPIANTO DI BETONAGGIO - PROTEZIONI E CATENELLE",
-  "IMPIANTO DI BETONAGGIO - SCALE E ACCESSI IN QUOTA",
-  "IMPIANTO DI BETONAGGIO - SCARICO INERTI E ASPIRAZIONE",
-  "AREA ESTERNA - QUADRI ELETTRICI",
-  "AREA ESTERNA - PRESIDI ANTINCENDIO",
-  "DEPOSITI E STOCCAGGIO PRODOTTI CHIMICI",
-  "OFFICINA",
-  "AREA LAVAGGIO MEZZI",
-  "GRUPPO ELETTROGENO",
-  "MAGAZZINO",
-  "CASA COMUNALE",
-  "ARCHIVIO COMUNALE",
-  "BIBLIOTECA / SALA LETTURA",
-  "AULA SCOLASTICA",
-  "PALESTRA",
-  "MENSA / CUCINA",
-  "SPOGLIATOI",
-  "BAGNI / SERVIZI IGIENICI",
-  "PIAZZALE / AREA ESTERNA",
-];
-
-// ── STORAGE ──────────────────────────────────────────────────
-const STORE_KEY    = "ichnos_sopralluogo_v3";
-const APIKEY_STORE = "ichnos_apikey";
-
-const carica = () => {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "null"); }
-  catch { return null; }
-};
-const salva = (d) => { try { localStorage.setItem(STORE_KEY, JSON.stringify(d)); } catch {} };
-
-const getApiKey = () => { try { return localStorage.getItem(APIKEY_STORE) || ""; } catch { return ""; } };
-const setApiKey = (k) => { try { localStorage.setItem(APIKEY_STORE, k); } catch {} };
-
-// ── HELPERS ──────────────────────────────────────────────────
-const uid = () => Math.random().toString(36).slice(2, 10);
-const oggi = () => new Date().toISOString().slice(0, 10);
-const ggMmYyyy = (iso) => {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
-};
-const dataEstesa = (iso) => {
-  if (!iso) return "";
-  const mesi = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
-  const [y, m, d] = iso.split("-");
-  return `${parseInt(d)} ${mesi[parseInt(m)-1]} ${y}`;
-};
-
-// ── FACTORY ──────────────────────────────────────────────────
-const mkCriticita = () => ({
-  id: uid(),
-  livello: "MEDIA",
-  titolo: "",
-  tipo_reiterazione: "NESSUNA",
-  data_reiterato: "",
-  descrizione: "",
-  riferimenti: "",
-  misure: [""],
-  foto: [],
+const mkSopr = (base={}) => ({
+  id:uid(), nome:"Nuovo sopralluogo", azienda:"", sede:"", indirizzo:"",
+  nLav:"", data:oggi(), tecnico:"", tipo:"Periodico", note:"",
+  ambienti:[], concl:"", vecchioVerbale:"", creato:new Date().toISOString(),
+  ...base
 });
-const mkReparto = () => ({
-  id: uid(),
-  nome: "",
-  criticita: [mkCriticita()],
-  aperto: true,
-});
-const mkSopralluogo = () => ({
-  destinatario: "",
-  indirizzo_destinatario: "",
-  data_sopralluogo: oggi(),
-  data_redazione: oggi(),
-  is_aggiornamento: false,
-  data_relazione_precedente: "",
-  tipologia_destinatario: "privato", // "pubblico" | "privato"
-  tecnici: [{ nome: "Dott. Falchi Giancarlo", ruolo: "Consulente esterno in materia di Igiene e Sicurezza" }],
-  reparti: [mkReparto()],
-  raccomandazioni_finali: [],
-});
+const mkAmb  = () => ({ id:uid(), nome:"", nomeL:"", ubicazione:"", descr:"", foto:[], elementi:[] });
+const mkEl   = () => ({ id:uid(), nome:"", nomeL:"", descr:"", conforme:true, criticita:[] });
+const mkCrit = () => ({ id:uid(), titolo:"", descr:"", misure:"", gravita:"Media", prob:"Possibile", stato:"Aperta", reiterata:false, note:"" });
 
-// ── API CLAUDE ───────────────────────────────────────────────
-async function callAI(prompt) {
-  const k = getApiKey();
-  if (!k) throw new Error("APIKEY_MISSING");
+// ── AI ────────────────────────────────────────────────────────
+const callAI = async (prompt, maxTokens=700) => {
+  const k = akGet();
+  if(!k) throw new Error("NO_KEY");
   const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": k,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5",
-      max_tokens: 1500,
-      messages: [{ role: "user", content: prompt }],
-    }),
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:maxTokens,messages:[{role:"user",content:prompt}]})
   });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(`API ${r.status}: ${t.slice(0,200)}`);
-  }
-  const data = await r.json();
-  return data.content?.find(b => b.type === "text")?.text || "";
-}
-
-// ── COMPONENTI BASE ──────────────────────────────────────────
-const Btn = ({ children, onClick, variant="primary", icon, full, sz="md", disabled }) => {
-  const sty = {
-    primary:   { bg: T.accent, color: "#fff", border: T.accent },
-    ghost:     { bg: "transparent", color: T.ink, border: T.border },
-    danger:    { bg: T.redBg, color: T.red, border: T.red },
-    success:   { bg: T.greenBg, color: T.green, border: T.green },
-    soft:      { bg: T.paper, color: T.ink, border: T.border },
-  }[variant];
-  const pad = sz === "sm" ? "6px 10px" : sz === "lg" ? "12px 16px" : "9px 14px";
-  const fs  = sz === "sm" ? 12 : sz === "lg" ? 14 : 13;
-  return (
-    <button onClick={onClick} disabled={disabled}
-      style={{
-        display:"inline-flex", alignItems:"center", justifyContent:"center", gap:6,
-        background: sty.bg, color: sty.color, border:`1px solid ${sty.border}`,
-        padding: pad, borderRadius: 8, fontSize: fs, fontWeight: 600,
-        cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-        width: full ? "100%" : "auto", fontFamily: "inherit",
-      }}>
-      {icon}{children}
-    </button>
-  );
+  if(!r.ok){const t=await r.text();throw new Error("Err "+r.status+": "+t.slice(0,80));}
+  const d=await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return d.content?.find(b=>b.type==="text")?.text||"";
 };
 
-const Field = ({ label, children, hint }) => (
-  <div style={{ marginBottom: 12 }}>
-    {label && <label style={{ display:"block", fontSize: 11, fontWeight: 700, color: T.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</label>}
-    {children}
-    {hint && <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>{hint}</div>}
+// ── UI BASE ───────────────────────────────────────────────────
+const Btn = ({children,onClick,v="p",sz="m",icon,disabled,full,style:sx={}}) => {
+  const S={p:{background:T.accent,color:"#fff",border:"none"},s:{background:"#fff",color:T.text,border:`1px solid ${T.border}`},g:{background:"transparent",color:T.muted,border:"none"},d:{background:T.errBg,color:T.err,border:`1px solid #FECACA`},a:{background:T.purple,color:"#fff",border:"none"},ok:{background:T.okBg,color:T.ok,border:`1px solid #BBF7D0`}}[v]||{};
+  const P={xs:"4px 8px",s:"6px 11px",m:"8px 15px",l:"11px 20px"}[sz]||"8px 15px";
+  const F={xs:11,s:12,m:13,l:15}[sz]||13;
+  return <button onClick={onClick} disabled={disabled} style={{...S,padding:P,fontSize:F,fontWeight:700,borderRadius:8,display:"inline-flex",alignItems:"center",gap:5,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,width:full?"100%":"auto",justifyContent:full?"center":"flex-start",fontFamily:"inherit",boxSizing:"border-box",...sx}}>{icon&&<span style={{display:"flex"}}>{icon}</span>}{children}</button>;
+};
+
+const Inp = ({value,onChange,placeholder,type="text",rows,disabled}) => {
+  const s={width:"100%",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${T.border}`,outline:"none",fontFamily:"inherit",color:T.text,background:disabled?"#F5F2ED":"#fff",boxSizing:"border-box"};
+  if(rows) return <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows} disabled={disabled} style={{...s,resize:"vertical",minHeight:rows*24}}/>;
+  return <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={s}/>;
+};
+
+const Sel = ({value,onChange,options,placeholder}) => (
+  <select value={value} onChange={e=>onChange(e.target.value)}
+    style={{width:"100%",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${value?T.accent:T.border}`,outline:"none",fontFamily:"inherit",color:value?T.text:"#999",background:"#fff",boxSizing:"border-box"}}>
+    {placeholder&&<option value="">{placeholder}</option>}
+    {options.map(o=><option key={o} value={o}>{o}</option>)}
+  </select>
+);
+
+const SelL = ({value,valueL,onVal,onL,options,placeholder,label}) => (
+  <div>
+    <select value={value} onChange={e=>{onVal(e.target.value);if(e.target.value!=="__L__")onL("");}}
+      style={{width:"100%",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${value?T.accent:T.border}`,outline:"none",fontFamily:"inherit",color:value?T.text:"#999",background:"#fff",boxSizing:"border-box"}}>
+      <option value="">{placeholder||"Seleziona..."}</option>
+      {options.map(o=><option key={o} value={o}>{o}</option>)}
+      <option value="__L__">✏️ Scrivi manualmente...</option>
+    </select>
+    {value==="__L__"&&<input value={valueL} onChange={e=>onL(e.target.value)} placeholder={`Inserisci ${label||"valore"}...`} autoFocus style={{width:"100%",padding:"9px 12px",fontSize:14,borderRadius:8,border:`2px solid ${T.accent}`,outline:"none",fontFamily:"inherit",color:T.text,background:"#fff",boxSizing:"border-box",marginTop:6}}/>}
   </div>
 );
 
-const Input = (props) => (
-  <input {...props} style={{
-    width: "100%", padding: "9px 11px", border: `1px solid ${T.border}`,
-    borderRadius: 7, fontSize: 14, fontFamily: "inherit", background: "#fff",
-    boxSizing: "border-box", ...(props.style||{})
-  }} />
-);
+const Fld  = ({label,children,hint}) => <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</div>{children}{hint&&<p style={{fontSize:11,color:T.muted,margin:"4px 0 0"}}>{hint}</p>}</div>;
+const Card = ({children,style={}}) => <div style={{background:"#fff",borderRadius:12,border:`1px solid ${T.border}`,marginBottom:12,...style}}>{children}</div>;
+const Bdg  = ({children,color="gray"}) => {const m={gray:{bg:"#F5F2ED",c:T.muted},red:{bg:T.errBg,c:T.err},green:{bg:T.okBg,c:T.ok},yellow:{bg:T.warnBg,c:T.warn},blue:{bg:T.blueBg,c:T.blue},purple:{bg:"#F5F3FF",c:T.purple}};const s=m[color]||m.gray;return <span style={{background:s.bg,color:s.c,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap",display:"inline-block"}}>{children}</span>;};
 
-const Textarea = (props) => (
-  <textarea {...props} style={{
-    width: "100%", padding: "9px 11px", border: `1px solid ${T.border}`,
-    borderRadius: 7, fontSize: 14, fontFamily: "inherit", background: "#fff",
-    boxSizing: "border-box", resize: "vertical", minHeight: 70, ...(props.style||{})
-  }} />
-);
-
-const Select = (props) => (
-  <select {...props} style={{
-    width: "100%", padding: "9px 11px", border: `1px solid ${T.border}`,
-    borderRadius: 7, fontSize: 14, fontFamily: "inherit", background: "#fff",
-    boxSizing: "border-box", ...(props.style||{})
-  }} />
-);
-
-const Badge = ({ children, color = "ink", bg }) => {
-  const colors = { red: T.red, orange: T.orange, green: T.green, ink: T.ink, muted: T.muted };
-  const bgs    = { red: T.redBg, orange: T.orangeBg, green: T.greenBg, ink: T.bg, muted: T.bg };
+// ── AI BUTTON SMART ───────────────────────────────────────────
+const AIField = ({value,onChange,placeholder,rows=3,promptEmpty,promptFull,label,onNoKey}) => {
+  const [loading,setL]=useState(false);
+  const [err,setErr]=useState("");
+  const genera=async(e)=>{
+    e.stopPropagation();setL(true);setErr("");
+    try{
+      const prompt = value.trim() ? promptFull(value) : promptEmpty;
+      onChange(await callAI(prompt));
+    }catch(ex){if(ex.message==="NO_KEY"&&onNoKey)onNoKey();else setErr(ex.message.slice(0,60));}
+    finally{setL(false);}
+  };
   return (
-    <span style={{
-      background: bg || bgs[color], color: colors[color], padding: "2px 8px",
-      borderRadius: 4, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap"
-    }}>{children}</span>
+    <div>
+      <div style={{display:"flex",alignItems:"flex-start",gap:6}}>
+        <Inp value={value} onChange={onChange} placeholder={placeholder} rows={rows}/>
+        <button onClick={genera} disabled={loading} style={{padding:"9px 10px",borderRadius:8,border:"none",background:T.purple,color:"#fff",cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:4,flexShrink:0,opacity:loading?0.6:1}}>
+          {loading?<Loader2 size={14} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={14}/>}
+          <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{value.trim()?"Migliora":"Genera"}</span>
+        </button>
+      </div>
+      {err&&<p style={{fontSize:10,color:T.err,margin:"3px 0 0"}}>{err}</p>}
+    </div>
   );
 };
 
-// ── CRITICITÀ CARD ───────────────────────────────────────────
-function CriticitaCard({ nc, onChange, onDelete, idx }) {
-  const [open, setOpen] = useState(true);
-  const fileRef = useRef();
-  const L = lvlInfo(nc.livello);
-
-  const upd = (k, v) => onChange({ ...nc, [k]: v });
-  const updMisura = (i, v) => {
-    const m = [...nc.misure]; m[i] = v; upd("misure", m);
-  };
-  const addMisura = () => upd("misure", [...nc.misure, ""]);
-  const delMisura = (i) => upd("misure", nc.misure.filter((_, j) => j !== i));
-
-  const onFoto = (e) => {
-    const files = Array.from(e.target.files || []);
-    Promise.all(files.map(f => new Promise(res => {
-      const r = new FileReader();
-      r.onload = () => res({ id: uid(), data: r.result, name: f.name });
-      r.readAsDataURL(f);
-    }))).then(imgs => upd("foto", [...nc.foto, ...imgs]));
-    e.target.value = "";
-  };
-  const delFoto = (id) => upd("foto", nc.foto.filter(f => f.id !== id));
-
-  const aiSuggerisciDescr = async () => {
-    if (!nc.titolo) { alert("Inserisci prima un titolo per la criticità."); return; }
-    try {
-      const prompt = `Sei un consulente RSPP italiano. Per la criticità di sicurezza intitolata "${nc.titolo}" di livello ${nc.livello}, scrivi una descrizione tecnica oggettiva di 2-4 frasi nel registro formale dei verbali di sopralluogo (D.Lgs. 81/08). Usa formule come "Durante il sopralluogo è stato rilevato..." oppure "È stata riscontrata la presenza di...". Specifica DOVE, COSA, PERCHÉ è un rischio. Solo il testo della descrizione, nient'altro.`;
-      const txt = await callAI(prompt);
-      upd("descrizione", txt.trim());
-    } catch (e) {
-      if (e.message === "APIKEY_MISSING") alert("Configura la chiave API nelle impostazioni.");
-      else alert("Errore IA: " + e.message);
-    }
-  };
-
-  const aiSuggerisciMisure = async () => {
-    if (!nc.titolo && !nc.descrizione) { alert("Compila prima titolo o descrizione."); return; }
-    try {
-      const prompt = `Sei un consulente RSPP italiano. Per la criticità "${nc.titolo}" (livello ${nc.livello}) con descrizione "${nc.descrizione || "—"}", elenca da 3 a 6 misure correttive concrete da inserire dopo "Si dispone pertanto quanto segue:" nel verbale di sopralluogo (D.Lgs. 81/08). Una misura per riga, NON numerare, NON usare bullet o trattini iniziali. Tono imperativo formale ("Installare", "Predisporre", "Verificare").`;
-      const txt = await callAI(prompt);
-      const righe = txt.split("\n").map(s => s.replace(/^[\-\*\d\.\)]+\s*/, "").trim()).filter(Boolean);
-      upd("misure", righe.length ? righe : nc.misure);
-    } catch (e) {
-      if (e.message === "APIKEY_MISSING") alert("Configura la chiave API nelle impostazioni.");
-      else alert("Errore IA: " + e.message);
-    }
-  };
-
-  const aiRiferimenti = async () => {
-    if (!nc.titolo && !nc.descrizione) { alert("Compila prima titolo o descrizione."); return; }
-    try {
-      const prompt = `Per la criticità "${nc.titolo}" - "${nc.descrizione || ""}", indica i riferimenti normativi italiani applicabili (D.Lgs. 81/08 articoli, allegati, norme UNI/CEI, decreti ministeriali). Una sola riga sintetica, formato: "D.Lgs. 81/08 art. X - Allegato Y - UNI EN ZZZZ". Solo i riferimenti, niente altro.`;
-      const txt = await callAI(prompt);
-      upd("riferimenti", txt.trim().replace(/^["']|["']$/g, ""));
-    } catch (e) {
-      if (e.message === "APIKEY_MISSING") alert("Configura la chiave API nelle impostazioni.");
-      else alert("Errore IA: " + e.message);
-    }
-  };
-
+// ── MODALE IA ─────────────────────────────────────────────────
+const ModalIA = ({onClose}) => {
+  const [k,setK]=useState(akGet());
   return (
-    <div style={{
-      border: `2px solid ${L.color}`, borderRadius: 10, marginBottom: 12, background: "#fff",
-      overflow: "hidden",
-    }}>
-      <div onClick={() => setOpen(!open)} style={{
-        background: L.bg, padding: "10px 12px", cursor: "pointer",
-        display: "flex", alignItems: "center", gap: 8,
-      }}>
-        {open ? <ChevronDown size={16} style={{ color: L.color }} /> : <ChevronRight size={16} style={{ color: L.color }} />}
-        <span style={{ fontSize: 11, fontWeight: 800, color: L.color, letterSpacing: 0.5 }}>
-          #{idx+1} · {L.label.split(" ")[1]}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:16,padding:24,maxWidth:380,width:"100%"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <Key size={18} style={{color:T.purple}}/><h3 style={{margin:0,fontFamily:"Georgia,serif"}}>Chiave API Anthropic</h3>
+          <button onClick={onClose} style={{marginLeft:"auto",border:"none",background:"transparent",cursor:"pointer"}}><X size={18}/></button>
+        </div>
+        <div style={{background:"#F5F3FF",borderRadius:8,padding:12,marginBottom:14,fontSize:12,color:T.purple,lineHeight:1.6}}>
+          1. Vai su <strong>console.anthropic.com</strong><br/>
+          2. Settings → API Keys → Create Key<br/>
+          3. Copia la chiave (inizia con <code>sk-ant-</code>)
+        </div>
+        <Fld label="Chiave API"><Inp value={k} onChange={setK} placeholder="sk-ant-..." type="password"/></Fld>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={()=>{akSet(k.trim());onClose();}} full icon={<Key size={13}/>}>Salva e attiva</Btn>
+          <Btn v="s" onClick={onClose}>Annulla</Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── FOTO ─────────────────────────────────────────────────────
+const FotoUploader = ({foto,onAdd,onDel,onComm}) => {
+  const idC=useState(()=>"c"+uid())[0];
+  const idG=useState(()=>"g"+uid())[0];
+  const onFile=async(e)=>{
+    for(const f of Array.from(e.target.files||[])){
+      if(!f.type.startsWith("image/")) continue;
+      await new Promise(res=>{const r=new FileReader();r.onload=ev=>{onAdd({id:uid(),data:ev.target.result,nome:f.name,comm:""});res();};r.readAsDataURL(f);});
+    }
+    e.target.value="";
+  };
+  const lb={display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,padding:"12px 8px",borderRadius:10,border:`2px dashed ${T.border}`,cursor:"pointer",flex:1};
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        <label htmlFor={idC} style={lb}><Camera size={20} style={{color:T.accent}}/><span style={{fontSize:11,fontWeight:700,color:T.accent}}>Fotocamera</span><input id={idC} type="file" accept="image/*" capture="environment" onChange={onFile} style={{display:"none"}}/></label>
+        <label htmlFor={idG} style={lb}><Image size={20} style={{color:T.blue}}/><span style={{fontSize:11,fontWeight:700,color:T.blue}}>Galleria</span><input id={idG} type="file" accept="image/*" multiple onChange={onFile} style={{display:"none"}}/></label>
+      </div>
+      {foto.length===0&&<p style={{fontSize:12,color:T.muted,textAlign:"center"}}>Nessuna foto</p>}
+      {foto.map(f=>(
+        <div key={f.id} style={{display:"flex",gap:8,padding:8,borderRadius:8,border:`1px solid ${T.border}`,marginBottom:6,alignItems:"flex-start"}}>
+          <img src={f.data} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:10,color:T.muted,margin:"0 0 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.nome}</p>
+            <input value={f.comm} onChange={e=>onComm(f.id,e.target.value)} placeholder="Descrizione..." style={{width:"100%",padding:"4px 8px",fontSize:12,borderRadius:6,border:`1px solid ${T.border}`,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <button onClick={()=>onDel(f.id)} style={{border:"none",background:"transparent",cursor:"pointer"}}><X size={13} style={{color:T.err}}/></button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ── CRITICITÀ CARD ────────────────────────────────────────────
+const CritCard = ({aId,eId,c,updC,delC,setIA,titoloCrit}) => {
+  const [open,setOpen]=useState(true);
+  return (
+    <div style={{border:`1px solid ${c.reiterata?"#F59E0B":"#FECACA"}`,borderRadius:8,padding:10,marginBottom:8,background:c.reiterata?T.warnBg:T.errBg}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:open?10:0,flexWrap:"wrap"}}>
+        <AlertTriangle size={12} style={{color:c.reiterata?T.warn:T.err,flexShrink:0}}/>
+        <span style={{flex:1,fontSize:12,fontWeight:700,color:c.reiterata?T.warn:T.err,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          {c.titolo||"Criticità"}
         </span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-          {nc.titolo || <em style={{ color: T.muted, fontWeight: 400 }}>(senza titolo)</em>}
-        </span>
-        {nc.tipo_reiterazione !== "NESSUNA" && <Badge color="orange">REIT</Badge>}
-        {nc.foto.length > 0 && <Badge color="muted">{nc.foto.length}📷</Badge>}
+        {c.reiterata&&<Bdg color="yellow">⟳ Reiterata</Bdg>}
+        <Bdg color={c.gravita==="Alta"||c.gravita==="Critica"?"red":c.gravita==="Media"?"yellow":"green"}>{c.gravita}</Bdg>
+        <button onClick={()=>updC(aId,eId,c.id,"stato",c.stato==="Aperta"?"Chiusa":"Aperta")}
+          style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,border:"none",cursor:"pointer",background:c.stato==="Chiusa"?T.okBg:T.errBg,color:c.stato==="Chiusa"?T.ok:T.err}}>
+          {c.stato}
+        </button>
+        <button onClick={()=>setOpen(!open)} style={{border:"none",background:"transparent",cursor:"pointer"}}>{open?<ChevronUp size={12}/>:<ChevronDown size={12}/>}</button>
+        <button onClick={()=>delC(aId,eId,c.id)} style={{border:"none",background:"transparent",cursor:"pointer"}}><Trash2 size={11} style={{color:T.muted}}/></button>
       </div>
 
-      {open && (
-        <div style={{ padding: 12 }}>
-          <Field label="Livello criticità">
-            <Select value={nc.livello} onChange={e => upd("livello", e.target.value)}>
-              {LIVELLI.map(l => <option key={l.val} value={l.val}>{l.label}</option>)}
-            </Select>
-          </Field>
+      {open&&(
+        <div>
+          <Fld label="Titolo criticità">
+            <Inp value={c.titolo} onChange={v=>updC(aId,eId,c.id,"titolo",v)} placeholder="Es. Mancanza segnaletica di sicurezza"/>
+          </Fld>
 
-          <Field label="Titolo (MAIUSCOLO, breve, con azione)">
-            <Input
-              value={nc.titolo}
-              onChange={e => upd("titolo", e.target.value.toUpperCase())}
-              placeholder="ES. SCALA NON CONFORME DA ELIMINARE"
-            />
-          </Field>
+          <Fld label="Descrizione tecnica">
+            <AIField
+              value={c.descr} onChange={v=>updC(aId,eId,c.id,"descr",v)}
+              placeholder="Descrizione tecnica della criticità rilevata..."
+              rows={3}
+              promptEmpty={`Sei un RSPP esperto. Scrivi una descrizione tecnica professionale per questa criticità rilevata in un sopralluogo: "${c.titolo||titoloCrit||"criticità"}". La descrizione deve essere chiara, sintetica e tecnica. Non citare articoli di legge nel testo. Non usare formule ripetitive come "Durante il sopralluogo è stato riscontrato". Varia il testo in base al contenuto. Max 3 frasi. Solo il testo della descrizione.`}
+              promptFull={v=>`Sei un RSPP esperto. Migliora questa descrizione tecnica rendendola più professionale e tecnica. Non citare articoli di legge. Non usare frasi come "Durante il sopralluogo". Testo originale: "${v}". Rispondi solo con la descrizione migliorata.`}
+              onNoKey={()=>setIA(true)}/>
+          </Fld>
 
-          <Field label="Reiterazione">
-            <Select value={nc.tipo_reiterazione} onChange={e => upd("tipo_reiterazione", e.target.value)}>
-              {REITER.map(r => <option key={r.val} value={r.val}>{r.label}</option>)}
-            </Select>
-          </Field>
+          <Fld label="Misure correttive">
+            <AIField
+              value={c.misure} onChange={v=>updC(aId,eId,c.id,"misure",v)}
+              placeholder="Misure correttive da adottare..."
+              rows={3}
+              promptEmpty={`Sei un RSPP esperto. Sulla base di questa criticità: "${c.descr||c.titolo||"criticità"}", indica le misure correttive tecniche, organizzative e procedurali da adottare. Sii concreto e pratico. Non citare articoli di legge nel testo. Max 4 misure concise. Solo il testo delle misure.`}
+              promptFull={v=>`Sei un RSPP esperto. Migliora queste misure correttive rendendole più tecniche e professionali. Non citare articoli di legge. Misure originali: "${v}". Rispondi solo con le misure migliorate.`}
+              onNoKey={()=>setIA(true)}/>
+          </Fld>
 
-          {nc.tipo_reiterazione !== "NESSUNA" && (
-            <Field label="Data verbale precedente (per la dicitura)">
-              <Input type="date" value={nc.data_reiterato} onChange={e => upd("data_reiterato", e.target.value)} />
-            </Field>
-          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <Fld label="Gravità"><Sel value={c.gravita} onChange={v=>updC(aId,eId,c.id,"gravita",v)} options={GRAVITA}/></Fld>
+            <Fld label="Probabilità"><Sel value={c.prob||"Possibile"} onChange={v=>updC(aId,eId,c.id,"prob",v)} options={PROB}/></Fld>
+          </div>
 
-          <Field label="Descrizione tecnica">
-            <Textarea
-              value={nc.descrizione}
-              onChange={e => upd("descrizione", e.target.value)}
-              placeholder="Durante il sopralluogo è stato rilevato..."
-            />
-            <div style={{ marginTop: 4 }}>
-              <Btn variant="soft" sz="sm" icon={<Sparkles size={12} />} onClick={aiSuggerisciDescr}>Genera con IA</Btn>
-            </div>
-          </Field>
+          <Fld label="Note aggiuntive">
+            <Inp value={c.note||""} onChange={v=>updC(aId,eId,c.id,"note",v)} placeholder="Note, annotazioni..." rows={2}/>
+          </Fld>
+        </div>
+      )}
+    </div>
+  );
+};
 
-          <Field label="Riferimenti normativi">
-            <Input
-              value={nc.riferimenti}
-              onChange={e => upd("riferimenti", e.target.value)}
-              placeholder="D.Lgs. 81/08 art. X - UNI EN ..."
-            />
-            <div style={{ marginTop: 4 }}>
-              <Btn variant="soft" sz="sm" icon={<Sparkles size={12} />} onClick={aiRiferimenti}>Suggerisci con IA</Btn>
-            </div>
-          </Field>
-
-          <Field label="Misure (Si dispone pertanto quanto segue)">
-            {nc.misure.map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                <div style={{ fontSize: 13, color: T.muted, paddingTop: 9, minWidth: 18 }}>{i+1}.</div>
-                <Textarea
-                  value={m}
-                  onChange={e => updMisura(i, e.target.value)}
-                  placeholder="Es. Installare immediatamente..."
-                  style={{ minHeight: 50, flex: 1 }}
-                />
-                {nc.misure.length > 1 && (
-                  <button onClick={() => delMisura(i)} style={{
-                    background: "transparent", border: "none", color: T.muted, cursor: "pointer", padding: 4
-                  }}><Trash2 size={14} /></button>
-                )}
-              </div>
+// ── ELEMENTO CARD ─────────────────────────────────────────────
+const ElCard = ({aId,el,updEl,updC,addC,delC,delEl,setIA}) => {
+  const [open,setOpen]=useState(false);
+  const [tab,setTab]=useState("crit");
+  const ncAp=el.criticita.filter(c=>c.stato==="Aperta").length;
+  return (
+    <div style={{border:`1px solid ${T.border}`,borderRadius:8,padding:10,marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:open?8:0}}>
+        <button onClick={()=>updEl(aId,el.id,"conforme",!el.conforme)} style={{border:"none",background:"transparent",cursor:"pointer",flexShrink:0}}>
+          {el.conforme?<CheckCircle size={15} style={{color:T.ok}}/>:<AlertCircle size={15} style={{color:T.err}}/>}
+        </button>
+        <button onClick={()=>setOpen(!open)} style={{flex:1,textAlign:"left",border:"none",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:600}}>
+          {nM(el.nome,el.nomeL)||"Elemento"}{ncAp>0&&<>{" "}<Bdg color="red">{ncAp} NC</Bdg></>}
+        </button>
+        <button onClick={()=>setOpen(!open)} style={{border:"none",background:"transparent",cursor:"pointer"}}>{open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
+        <button onClick={()=>delEl(aId,el.id)} style={{border:"none",background:"transparent",cursor:"pointer"}}><Trash2 size={12} style={{color:T.muted}}/></button>
+      </div>
+      {open&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <Fld label="Elemento">
+              <SelL value={el.nome} valueL={el.nomeL||""} onVal={v=>updEl(aId,el.id,"nome",v)} onL={v=>updEl(aId,el.id,"nomeL",v)} options={ELEMENTI} placeholder="Seleziona..." label="elemento"/>
+            </Fld>
+            <Fld label="Stato">
+              <Sel value={el.conforme?"Conforme":"Non conforme"} onChange={v=>updEl(aId,el.id,"conforme",v==="Conforme")} options={["Conforme","Non conforme"]}/>
+            </Fld>
+          </div>
+          <Fld label="Osservazioni">
+            <AIField value={el.descr} onChange={v=>updEl(aId,el.id,"descr",v)} placeholder="Note sull'elemento..." rows={2}
+              promptEmpty={`RSPP: osservazione tecnica sintetica per l'elemento "${nM(el.nome,el.nomeL)||"elemento"}" in un sopralluogo. Max 2 frasi. Solo testo.`}
+              promptFull={v=>`RSPP: migliora questa osservazione tecnica: "${v}". Max 2 frasi. Solo testo.`}
+              onNoKey={()=>setIA(true)}/>
+          </Fld>
+          <div style={{display:"flex",gap:4,marginBottom:8,padding:3,background:T.bg,borderRadius:8}}>
+            {[["crit",`Criticità (${el.criticita.length})`],["foto","Foto"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:6,borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:tab===k?"#fff":"transparent",color:tab===k?T.accent:T.muted}}>{l}</button>
             ))}
-            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-              <Btn variant="soft" sz="sm" icon={<Plus size={12} />} onClick={addMisura}>Aggiungi</Btn>
-              <Btn variant="soft" sz="sm" icon={<Sparkles size={12} />} onClick={aiSuggerisciMisure}>Genera con IA</Btn>
-            </div>
-          </Field>
-
-          <Field label={`Foto (${nc.foto.length})`}>
-            {nc.foto.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))", gap: 6, marginBottom: 8 }}>
-                {nc.foto.map(f => (
-                  <div key={f.id} style={{ position: "relative", aspectRatio: "1", borderRadius: 6, overflow: "hidden", border: `1px solid ${T.border}` }}>
-                    <img src={f.data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <button onClick={() => delFoto(f.id)} style={{
-                      position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.7)",
-                      color: "#fff", border: "none", borderRadius: 4, width: 22, height: 22, cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}><X size={12} /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple onChange={onFoto} style={{ display: "none" }} />
-            <Btn variant="soft" sz="sm" icon={<Camera size={13} />} onClick={() => fileRef.current?.click()}>Scatta / Aggiungi foto</Btn>
-          </Field>
-
-          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 8, textAlign: "right" }}>
-            <Btn variant="danger" sz="sm" icon={<Trash2 size={12} />} onClick={onDelete}>Elimina criticità</Btn>
           </div>
+          {tab==="crit"&&(
+            <>
+              {el.criticita.map(c=><CritCard key={c.id} aId={aId} eId={el.id} c={c} updC={updC} delC={delC} setIA={setIA} titoloCrit={nM(el.nome,el.nomeL)}/>)}
+              <Btn v="d" sz="s" icon={<Plus size={12}/>} onClick={()=>addC(aId,el.id,mkCrit())} full>Aggiungi criticità</Btn>
+            </>
+          )}
+          {tab==="foto"&&<p style={{fontSize:12,color:T.muted,textAlign:"center",padding:"8px 0"}}>Le foto si aggiungono nell'ambiente (tab Foto)</p>}
         </div>
       )}
     </div>
   );
-}
+};
 
-// ── REPARTO CARD ─────────────────────────────────────────────
-function RepartoCard({ r, onChange, onDelete, idx }) {
-  const upd = (k, v) => onChange({ ...r, [k]: v });
-  const updNC = (id, nc) => upd("criticita", r.criticita.map(c => c.id === id ? nc : c));
-  const delNC = (id)   => upd("criticita", r.criticita.filter(c => c.id !== id));
-  const addNC = ()     => upd("criticita", [...r.criticita, mkCriticita()]);
-
-  const stats = { e: 0, m: 0, l: 0 };
-  r.criticita.forEach(c => {
-    if (c.livello === "ELEVATA") stats.e++;
-    else if (c.livello === "MEDIA") stats.m++;
-    else stats.l++;
-  });
-
+// ── AMBIENTE CARD ─────────────────────────────────────────────
+const AmbCard = ({a,ai,updAmb,updEl,updC,addEl,delEl,addC,delC,addFoto,delFoto,commFoto,delAmb,setIA}) => {
+  const [tab,setTab]=useState("el");
+  const ncTot=a.elementi.reduce((s,e)=>s+e.criticita.filter(c=>c.stato==="Aperta").length,0);
   return (
-    <div style={{
-      background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
-      marginBottom: 14, overflow: "hidden",
-    }}>
-      <div style={{ padding: 12, borderBottom: r.aperto ? `1px solid ${T.border}` : "none", background: T.paper }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          <button onClick={() => upd("aperto", !r.aperto)} style={{
-            background: "transparent", border: "none", cursor: "pointer", padding: 0, display: "flex"
-          }}>
-            {r.aperto ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-          </button>
-          <span style={{ fontSize: 11, fontWeight: 800, color: T.accent, letterSpacing: 0.5 }}>REPARTO #{idx+1}</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-            {stats.e > 0 && <Badge color="red">{stats.e}🔴</Badge>}
-            {stats.m > 0 && <Badge color="orange">{stats.m}🟠</Badge>}
-            {stats.l > 0 && <Badge color="green">{stats.l}🟢</Badge>}
-          </div>
+    <Card>
+      <div style={{padding:"12px 14px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <MapPin size={14} style={{color:T.accent,flexShrink:0}}/>
+          <span style={{flex:1,fontSize:13,fontWeight:700}}>
+            {nM(a.nome,a.nomeL)||`Ambiente ${ai+1}`}{" "}
+            <Bdg color="gray">{a.elementi.length} el.</Bdg>{" "}
+            <Bdg color="gray">{(a.foto||[]).length} foto</Bdg>
+            {ncTot>0&&<>{" "}<Bdg color="red">{ncTot} NC</Bdg></>}
+          </span>
+          <button onClick={()=>delAmb(a.id)} style={{border:"none",background:"transparent",cursor:"pointer"}}><Trash2 size={14} style={{color:T.muted}}/></button>
         </div>
-        <Input
-          list={`reparti-${r.id}`}
-          value={r.nome}
-          onChange={e => upd("nome", e.target.value.toUpperCase())}
-          placeholder="NOME REPARTO (MAIUSCOLO)"
-          style={{ fontWeight: 700 }}
-        />
-        <datalist id={`reparti-${r.id}`}>
-          {REPARTI_SUGG.map(s => <option key={s} value={s} />)}
-        </datalist>
-      </div>
-
-      {r.aperto && (
-        <div style={{ padding: 12 }}>
-          {r.criticita.map((c, i) => (
-            <CriticitaCard
-              key={c.id} nc={c} idx={i}
-              onChange={nc => updNC(c.id, nc)}
-              onDelete={() => delNC(c.id)}
-            />
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <Fld label="Nome ambiente">
+            <SelL value={a.nome} valueL={a.nomeL||""} onVal={v=>updAmb(a.id,"nome",v)} onL={v=>updAmb(a.id,"nomeL",v)} options={AMBIENTI} placeholder="Seleziona..." label="ambiente"/>
+          </Fld>
+          <Fld label="Ubicazione"><Inp value={a.ubicazione} onChange={v=>updAmb(a.id,"ubicazione",v)} placeholder="Piano, ala..."/></Fld>
+        </div>
+        <Fld label="Descrizione">
+          <AIField value={a.descr} onChange={v=>updAmb(a.id,"descr",v)} placeholder="Condizioni generali rilevate..." rows={2}
+            promptEmpty={`RSPP: descrivi brevemente l'ambiente "${nM(a.nome,a.nomeL)||"ambiente"}" in un sopralluogo. Max 2 frasi. Solo testo.`}
+            promptFull={v=>`RSPP: migliora questa descrizione di ambiente: "${v}". Max 2 frasi. Solo testo.`}
+            onNoKey={()=>setIA(true)}/>
+        </Fld>
+        <div style={{display:"flex",gap:4,marginBottom:10,padding:3,background:T.bg,borderRadius:8,marginTop:10}}>
+          {[["el",`Elementi (${a.elementi.length})`],["foto",`Foto (${(a.foto||[]).length})`]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:6,borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:tab===k?"#fff":"transparent",color:tab===k?T.accent:T.muted}}>{l}</button>
           ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <Btn variant="ghost" icon={<Plus size={14} />} onClick={addNC} full>Aggiungi criticità</Btn>
-            <Btn variant="danger" sz="md" icon={<Trash2 size={14} />} onClick={onDelete}>Reparto</Btn>
-          </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-// ── MODALE IMPOSTAZIONI IA ───────────────────────────────────
-function ModalSettings({ onClose }) {
-  const [k, setK] = useState(getApiKey());
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: "#fff", borderRadius: 12, padding: 20, maxWidth: 480, width: "100%",
-        maxHeight: "90vh", overflow: "auto",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>Impostazioni IA</h3>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer" }}><X size={18} /></button>
-        </div>
-        <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
-          Le funzioni IA usano l'API Anthropic. La chiave si salva solo nel tuo browser.
-          Ottienila gratis su <code style={{ background: T.bg, padding: "1px 5px", borderRadius: 3 }}>console.anthropic.com</code>.
-        </p>
-        <Field label="API Key (sk-ant-...)">
-          <Input value={k} onChange={e => setK(e.target.value)} placeholder="sk-ant-..." type="password" />
-        </Field>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Btn variant="primary" full onClick={() => { setApiKey(k); onClose(); }}>Salva</Btn>
-          <Btn variant="ghost" onClick={() => { setApiKey(""); setK(""); }}>Rimuovi</Btn>
-        </div>
+        {tab==="foto"&&<FotoUploader foto={a.foto||[]} onAdd={f=>addFoto(a.id,f)} onDel={fId=>delFoto(a.id,fId)} onComm={(fId,c)=>commFoto(a.id,fId,c)}/>}
+        {tab==="el"&&(
+          <>
+            {a.elementi.map(el=><ElCard key={el.id} aId={a.id} el={el} updEl={updEl} updC={updC} addC={addC} delC={delC} delEl={delEl} setIA={setIA}/>)}
+            <Btn v="s" sz="s" icon={<Plus size={12}/>} onClick={()=>addEl(a.id)} full>Aggiungi elemento</Btn>
+          </>
+        )}
       </div>
-    </div>
+    </Card>
   );
-}
+};
 
-// ── GENERAZIONE HTML VERBALE ─────────────────────────────────
-function generaHTML(S) {
-  const banner = (nc) => {
-    if (nc.tipo_reiterazione === "NESSUNA") return "";
-    const data = nc.data_reiterato ? ggMmYyyy(nc.data_reiterato) : (S.data_relazione_precedente ? ggMmYyyy(S.data_relazione_precedente) : "");
-    let testo = "⚠ RILIEVO REITERATO";
-    if (nc.tipo_reiterazione === "ESTESO")    testo = `⚠ RILIEVO REITERATO – Criticità già segnalata${data ? " nella Relazione del " + data : ""} e non risolta.`;
-    if (nc.tipo_reiterazione === "AGGRAVATO") testo = "⚠ RILIEVO REITERATO E AGGRAVATO";
-    if (nc.tipo_reiterazione === "PARZIALE")  testo = "⚠ RILIEVO REITERATO PARZIALMENTE";
-    return `<div class="banner">${testo}</div>`;
-  };
-
-  const fotoHtml = (foto) => {
-    if (!foto || !foto.length) return "";
-    return `<div class="foto-grid">${foto.map(f => `<img src="${f.data}" alt="" />`).join("")}</div>`;
-  };
-
-  const totale = S.reparti.reduce((s, r) => s + r.criticita.length, 0);
-  const cnt = { ELEVATA: 0, MEDIA: 0, LIEVE: 0 };
-  S.reparti.forEach(r => r.criticita.forEach(c => cnt[c.livello]++));
-
-  const tecnici = S.tecnici.length > 1 ? "i sottoscritti" : "il sottoscritto";
-  const verbo   = S.tecnici.length > 1 ? "hanno" : "ha";
-  const nomi    = S.tecnici.map(t => t.nome).join(", ");
-  const ruoli   = S.tecnici[0]?.ruolo || "Consulente esterno in materia di Igiene e Sicurezza";
-  const dataLunga = `L'anno ${S.data_sopralluogo.slice(0,4)} addì ${parseInt(S.data_sopralluogo.slice(8,10))} del mese di ${["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"][parseInt(S.data_sopralluogo.slice(5,7))-1]}`;
-
-  let oggetto = `Relazione sopralluogo dello staff tecnico della Ichnossicurezza s.r.l. del ${dataEstesa(S.data_sopralluogo)}`;
-  if (S.is_aggiornamento && S.data_relazione_precedente) {
-    oggetto += ` – Aggiornamento alla precedente Relazione del ${dataEstesa(S.data_relazione_precedente)}.`;
-  } else { oggetto += "."; }
-
-  return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Relazione Sopralluogo - ${S.destinatario}</title>
+// ── GENERATORE HTML VERBALE ───────────────────────────────────
+const generaHTML = (s) => {
+  const tutteCrit=s.ambienti.flatMap(a=>a.elementi.flatMap(e=>e.criticita.map(c=>({...c,amb:nM(a.nome,a.nomeL),el:nM(e.nome,e.nomeL)}))));
+  const critAp=tutteCrit.filter(c=>c.stato==="Aperta");
+  const critReit=critAp.filter(c=>c.reiterata);
+  return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Verbale ${s.azienda} ${s.data}</title>
 <style>
-  @page { size: A4; margin: 2cm; }
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #000; max-width: 21cm; margin: 0 auto; padding: 1.5cm 1cm; background: #fff; }
-  .header { text-align: center; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid #999; }
-  .header h1 { font-size: 16pt; margin: 0 0 4px; }
-  .header .sub { font-size: 9pt; color: #555; }
-  .spett { margin: 16px 0; }
-  .spett .lbl { font-size: 10pt; color: #555; }
-  .spett .dest { font-weight: bold; font-size: 12pt; margin: 4px 0; }
-  .oggetto { margin: 16px 0; text-align: justify; }
-  h2.sez { font-size: 13pt; text-align: center; margin: 24px 0 12px; padding-bottom: 4px; border-bottom: 1px solid #ccc; }
-  .legenda { display: flex; gap: 8px; margin: 12px 0; }
-  .legenda > div { flex: 1; padding: 10px; text-align: center; border-radius: 4px; border: 1px solid; }
-  .leg-r { background: #fde8e8; border-color: #b91c1c; color: #b91c1c; }
-  .leg-o { background: #fef3c7; border-color: #d97706; color: #d97706; }
-  .leg-v { background: #d1fae5; border-color: #15803d; color: #15803d; }
-  .leg b { display: block; font-size: 11pt; }
-  .leg span { font-size: 9pt; font-style: italic; }
-  .reparto-h { background: #4472C4; color: #fff; padding: 8px 12px; font-weight: bold; margin: 20px 0 0; border-radius: 4px 4px 0 0; }
-  .reparto-b { border: 1px solid #ccc; border-top: none; padding: 12px; border-radius: 0 0 4px 4px; }
-  .nc { margin-bottom: 18px; border-left: 4px solid; padding-left: 12px; page-break-inside: avoid; }
-  .nc.ELEVATA { border-color: #b91c1c; }
-  .nc.MEDIA   { border-color: #d97706; }
-  .nc.LIEVE   { border-color: #15803d; }
-  .nc h3 { font-size: 11pt; margin: 0 0 6px; text-transform: uppercase; }
-  .nc h3 .lvl { font-size: 9pt; padding: 2px 6px; border-radius: 3px; margin-right: 6px; }
-  .lvl.ELEVATA { background: #fde8e8; color: #b91c1c; }
-  .lvl.MEDIA   { background: #fef3c7; color: #d97706; }
-  .lvl.LIEVE   { background: #d1fae5; color: #15803d; }
-  .banner { background: #fef3c7; color: #b45309; border: 1px solid #b45309; padding: 4px 8px; font-size: 9.5pt; font-weight: bold; margin: 4px 0 8px; border-radius: 3px; }
-  .descr { text-align: justify; margin: 4px 0 8px; }
-  .rif { font-style: italic; font-size: 9.5pt; color: #444; margin: 4px 0 8px; }
-  .misure { background: #fafafa; border: 1px solid #eee; padding: 8px 8px 8px 28px; margin: 6px 0; }
-  .misure .lbl { font-weight: bold; margin-bottom: 4px; margin-left: -16px; }
-  .misure ol { margin: 0; padding-left: 16px; }
-  .misure li { margin-bottom: 4px; }
-  .foto-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
-  .foto-grid img { width: 100%; height: auto; max-height: 120px; object-fit: cover; border: 1px solid #ccc; border-radius: 3px; }
-  .riepilogo { margin-top: 30px; border: 1px solid #ccc; border-radius: 4px; padding: 12px; background: #fafafa; }
-  .riepilogo h3 { margin: 0 0 8px; font-size: 12pt; }
-  .stats { display: flex; gap: 12px; }
-  .stats > div { flex: 1; text-align: center; padding: 8px; border-radius: 4px; }
-  .firma { margin-top: 50px; text-align: right; }
-  .firma .ruolo { font-size: 10pt; color: #555; }
-  .firma .nome { font-weight: bold; }
-  .nota-finale { margin-top: 24px; font-style: italic; font-size: 9.5pt; color: #444; text-align: justify; }
-  @media print { .no-print { display: none !important; } }
-</style></head>
-<body>
-
-<div class="no-print" style="position:sticky;top:0;background:#1a1614;color:#fff;padding:12px;border-radius:6px;margin-bottom:20px;text-align:center">
-  <button onclick="window.print()" style="background:#b91c1c;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">🖨️ Stampa / Salva come PDF</button>
-  <span style="margin-left:12px;font-size:12px;opacity:0.7">Usa "Salva come PDF" nella finestra di stampa</span>
+*{box-sizing:border-box}
+body{font-family:Georgia,serif;max-width:850px;margin:0 auto;padding:40px 30px;color:#1C1917;line-height:1.75;font-size:14px}
+.logo{font-size:11px;color:#78716C;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px}
+h1{color:#B91C1C;border-bottom:2px solid #B91C1C;padding-bottom:10px;margin-bottom:24px;font-size:22px}
+h2{color:#1C1917;border-left:3px solid #B91C1C;padding-left:12px;margin-top:32px;font-size:16px}
+h3{font-size:14px;color:#44403C;margin:16px 0 8px}
+.meta{background:#F5F2ED;border-radius:8px;padding:16px;margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mr{display:flex;gap:8px}
+.ml{font-size:11px;color:#78716C;min-width:120px;flex-shrink:0}
+.mv{font-size:13px;font-weight:600}
+.amb-box{margin-bottom:24px;border:1px solid #DDD8CF;border-radius:8px;overflow:hidden}
+.amb-head{background:#F5F2ED;padding:10px 14px;font-weight:700;font-size:14px}
+.amb-body{padding:14px}
+.crit-box{margin-bottom:16px;border:1px solid #DDD8CF;border-radius:8px;padding:14px;page-break-inside:avoid}
+.crit-box.reit{border-color:#F59E0B;background:#FFFBEB}
+.crit-title{font-weight:700;font-size:14px;margin-bottom:8px;color:#1C1917}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-right:4px}
+.badge-red{background:#FEF2F2;color:#B91C1C}
+.badge-yellow{background:#FFFBEB;color:#B45309}
+.badge-green{background:#F0FDF4;color:#15803D}
+.badge-orange{background:#FFF7ED;color:#C2410C}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+th{background:#1C1917;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+td{padding:7px 10px;border-bottom:1px solid #DDD8CF;vertical-align:top}
+tr:nth-child(even) td{background:#F5F2ED}
+.foto-grid{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.foto-grid img{width:160px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #DDD8CF}
+.foto-caption{font-size:10px;color:#78716C;margin:3px 0 0;text-align:center}
+.firma{display:flex;justify-content:space-between;margin-top:60px;gap:40px}
+.fb{flex:1;border-top:1px solid #1C1917;padding-top:12px;font-size:12px}
+.disc{margin-top:40px;padding:14px;background:#FFFBEB;border-radius:8px;font-size:11px;color:#78716C;border:1px solid #FDE68A}
+@media print{body{padding:20px}.amb-box{page-break-inside:avoid}}
+</style></head><body>
+<p class="logo">Ichnossicurezza S.r.l. — Verbale di Sopralluogo</p>
+<h1>Verbale di Sopralluogo<br><small style="font-size:15px;font-weight:normal;color:#44403C">${s.azienda||"N/D"} — ${s.data}</small></h1>
+<div class="meta">
+  <div class="mr"><span class="ml">Azienda / Ente</span><span class="mv">${s.azienda||"—"}</span></div>
+  <div class="mr"><span class="ml">Sede</span><span class="mv">${s.sede||"—"}</span></div>
+  <div class="mr"><span class="ml">Indirizzo</span><span class="mv">${s.indirizzo||"—"}</span></div>
+  <div class="mr"><span class="ml">N° lavoratori</span><span class="mv">${s.nLav||"—"}</span></div>
+  <div class="mr"><span class="ml">Data sopralluogo</span><span class="mv">${s.data}</span></div>
+  <div class="mr"><span class="ml">Tipo</span><span class="mv">${s.tipo}</span></div>
+  <div class="mr"><span class="ml">Tecnico RSPP</span><span class="mv">${s.tecnico||"—"}</span></div>
 </div>
 
-<div class="header">
-  <h1>ICHNOSSICUREZZA S.R.L</h1>
-  <div class="sub">Zona Ind.le Predda Niedda St. 18 bis - 07100 (SS) — P.IVA 02754010905</div>
-  <div class="sub">info@ichnossicurezza.it · www.ichnossicurezza.it · Tel 079/4136984</div>
-</div>
-
-<div class="spett">
-  <div class="lbl">Spett.le</div>
-  <div class="dest">${S.destinatario}</div>
-  <div>${S.indirizzo_destinatario}</div>
-</div>
-
-<div class="oggetto"><b>Oggetto:</b> ${oggetto}</div>
-
-<h2 class="sez">PREMESSA</h2>
-<p>La seguente relazione viene redatta dal ${S.tecnici[S.tecnici.length-1].nome}, Agrotecnico laureato in tecniche della prevenzione nell'ambiente e nei luoghi di lavoro, ${ruoli} del ${S.destinatario}.</p>
-<p>Il sottoscritto, al fine di verificare l'applicazione delle disposizioni in materia di igiene e sicurezza del lavoro, ha eseguito gli opportuni accertamenti, e dopo aver effettuato un sopralluogo in loco, ha redatto il seguente documento.</p>
-${S.is_aggiornamento ? `<p>La presente relazione costituisce aggiornamento alla Relazione di Sopralluogo del ${dataEstesa(S.data_relazione_precedente)}, con verifica dello stato di attuazione delle prescrizioni precedentemente impartite ed individuazione di ulteriori criticità riscontrate.</p>` : ""}
-<p>La stima delle criticità riscontrate è stata eseguita nel modo più obbiettivo possibile, con classificazione mediante sistema semaforico (Rosso – Elevato, Arancione – Medio, Verde – Lieve).</p>
-
-<h2 class="sez">ATTESTAZIONE DI RESPONSABILITÀ</h2>
-<p style="text-align:center;font-weight:bold">ATTESTA SOTTO LA PROPRIA PERSONALE RESPONSABILITÀ</p>
-<p style="text-align:center;font-style:italic">quanto segue:</p>
-<p>${dataLunga} ${tecnici} ${nomi}, ${ruoli}, ${verbo} effettuato una visita nei luoghi di lavoro di pertinenza al fine di verificare lo stato di fatto di alcuni aspetti organizzativo-tecnici, igienico-sanitari degli ambienti in esame oltre che l'applicazione delle disposizioni in materia di igiene e sicurezza del lavoro.</p>
-<p>La verifica è stata eseguita attraverso la presa visione diretta delle strutture e dei vari ambienti.</p>
-<p>Sassari, ${ggMmYyyy(S.data_redazione)}</p>
-
-<h2 class="sez">LEGENDA LIVELLI DI CRITICITÀ</h2>
-<div class="legenda">
-  <div class="leg-r leg"><b>● ROSSO – ELEVATO</b><span>Intervento urgente e inderogabile</span></div>
-  <div class="leg-o leg"><b>● ARANCIONE – MEDIO</b><span>Intervento a breve termine</span></div>
-  <div class="leg-v leg"><b>● VERDE – LIEVE</b><span>Intervento di miglioramento</span></div>
-</div>
-
-${S.reparti.map((r, ri) => `
-<div class="reparto-h">REPARTO: ${r.nome || "(senza nome)"}</div>
-<div class="reparto-b">
-${r.criticita.map((nc, ci) => `
-<div class="nc ${nc.livello}">
-  <h3><span class="lvl ${nc.livello}">${nc.livello}</span>${nc.titolo || "(senza titolo)"}</h3>
-  ${banner(nc)}
-  ${nc.descrizione ? `<div class="descr">${nc.descrizione}</div>` : ""}
-  ${nc.riferimenti ? `<div class="rif"><b>Riferimenti normativi:</b> ${nc.riferimenti}</div>` : ""}
-  ${nc.misure.filter(m => m.trim()).length > 0 ? `
-  <div class="misure">
-    <div class="lbl">Si dispone pertanto quanto segue:</div>
-    <ol>${nc.misure.filter(m => m.trim()).map(m => `<li>${m}</li>`).join("")}</ol>
-  </div>` : ""}
-  ${fotoHtml(nc.foto)}
-</div>
-`).join("")}
-</div>
-`).join("")}
-
-<div class="riepilogo">
-  <h3>Riepilogo criticità rilevate</h3>
-  <div class="stats">
-    <div style="background:#fde8e8;color:#b91c1c"><b style="font-size:18pt">${cnt.ELEVATA}</b><br>🔴 ELEVATE</div>
-    <div style="background:#fef3c7;color:#d97706"><b style="font-size:18pt">${cnt.MEDIA}</b><br>🟠 MEDIE</div>
-    <div style="background:#d1fae5;color:#15803d"><b style="font-size:18pt">${cnt.LIEVE}</b><br>🟢 LIEVI</div>
-    <div style="background:#eee"><b style="font-size:18pt">${totale}</b><br>TOTALE</div>
+<h2>1. Ambienti visitati e criticità rilevate</h2>
+${s.ambienti.map((a,i)=>{
+  const nA=nM(a.nome,a.nomeL);
+  const critAmb=a.elementi.flatMap(e=>e.criticita.filter(c=>c.stato==="Aperta").map(c=>({...c,el:nM(e.nome,e.nomeL)})));
+  return `<div class="amb-box">
+  <div class="amb-head">${i+1}. ${nA||"Ambiente"} ${a.ubicazione?"— "+a.ubicazione:""}</div>
+  <div class="amb-body">
+    ${a.descr?`<p>${a.descr}</p>`:""}
+    ${a.elementi.filter(e=>e.nome||e.nomeL).length?`
+    <h3>Elementi verificati</h3>
+    <table><tr><th>Elemento</th><th>Stato</th><th>Osservazioni</th></tr>
+    ${a.elementi.map(e=>`<tr><td><strong>${nM(e.nome,e.nomeL)||"—"}</strong></td><td style="color:${e.conforme?"#15803D":"#B91C1C"};font-weight:700">${e.conforme?"✓ Conforme":"✗ Non conforme"}</td><td>${e.descr||"—"}</td></tr>`).join("")}
+    </table>`:""}
+    ${critAmb.length?`
+    <h3>Criticità rilevate (${critAmb.length})</h3>
+    ${critAmb.map((c,ci)=>`
+    <div class="crit-box${c.reiterata?" reit":""}">
+      <div class="crit-title">
+        ${ci+1}. ${c.titolo||"Criticità"}
+        <span class="badge ${c.gravita==="Alta"||c.gravita==="Critica"?"badge-red":c.gravita==="Media"?"badge-yellow":"badge-green"}">${c.gravita}</span>
+        ${c.reiterata?`<span class="badge badge-orange">⟳ Reiterata</span>`:""}
+      </div>
+      ${c.descr?`<p><strong>Descrizione:</strong> ${c.descr}</p>`:""}
+      ${c.misure?`<p><strong>Misure correttive:</strong> ${c.misure}</p>`:""}
+      ${c.note?`<p><em>Note: ${c.note}</em></p>`:""}
+    </div>`).join("")}`:""}
+    ${(a.foto||[]).length?`
+    <h3>Documentazione fotografica</h3>
+    <div class="foto-grid">
+    ${a.foto.map(f=>`<div><img src="${f.data}" alt="${f.nome}"/><p class="foto-caption">${f.comm||f.nome}</p></div>`).join("")}
+    </div>`:""}
   </div>
-</div>
+</div>`;}).join("")}
 
-<p class="nota-finale">Si ricorda che la presente Relazione costituisce strumento di supporto al Datore di Lavoro per l'adempimento degli obblighi previsti dalla normativa vigente in materia di salute e sicurezza nei luoghi di lavoro. L'attuazione delle prescrizioni indicate è di competenza del Datore di Lavoro, che ne risponde direttamente. Si resta a disposizione per ogni eventuale chiarimento.</p>
+<h2>2. Riepilogo criticità aperte (${critAp.length})</h2>
+${critAp.length===0?`<p>Nessuna criticità rilevata durante il sopralluogo.</p>`:`
+<table>
+  <tr><th>#</th><th>Ambiente</th><th>Elemento</th><th>Criticità</th><th>Gravità</th><th>Stato</th></tr>
+  ${critAp.map((c,i)=>`<tr><td>${i+1}</td><td>${c.amb}</td><td>${c.el}</td><td>${c.titolo||c.descr?.slice(0,60)||"—"}</td><td>${c.gravita}</td><td>${c.reiterata?"⟳ Reiterata":"Nuova"}</td></tr>`).join("")}
+</table>`}
+
+${critReit.length?`
+<h2>3. Criticità reiterate (${critReit.length})</h2>
+<p>Le seguenti criticità erano già presenti nel precedente verbale di sopralluogo e non risultano ancora risolte:</p>
+<table>
+  <tr><th>#</th><th>Ambiente</th><th>Criticità</th><th>Gravità</th></tr>
+  ${critReit.map((c,i)=>`<tr><td>${i+1}</td><td>${c.amb}</td><td>${c.titolo||"—"}</td><td>${c.gravita}</td></tr>`).join("")}
+</table>`:""}
+
+${s.note?`<h2>Note generali</h2><p>${s.note}</p>`:""}
+
+<h2>Conclusioni</h2>
+<p>${s.concl||`Il sopralluogo del ${s.data} presso ${s.azienda||"l'azienda"} ha consentito di verificare ${s.ambienti.length} ambienti, rilevando ${critAp.length} criticità aperte${critReit.length?`, di cui ${critReit.length} reiterate rispetto al precedente verbale`:""}. Si richiede l'adozione delle misure correttive indicate.`}</p>
 
 <div class="firma">
-${S.tecnici.map(t => `<div style="margin-bottom:24px"><div class="ruolo">${t.ruolo}</div><div class="nome">${t.nome}</div><br><div>Firma: _____________________</div></div>`).join("")}
+  <div class="fb">Il Tecnico RSPP<br><strong>${s.tecnico||"_______________"}</strong><br><br>Firma: _________________________</div>
+  <div class="fb">Il Datore di Lavoro — per presa visione<br><br><br>Firma: _________________________</div>
 </div>
-
+<div class="disc"><strong>Nota.</strong> Il presente verbale ha valore di sopralluogo periodico in materia di salute e sicurezza sul lavoro. Non sostituisce la Valutazione dei Rischi (DVR). Ichnossicurezza S.r.l. — Tel. 079-4136984 — info@ichnossicurezza.it</div>
 </body></html>`;
-}
+};
 
-// ── APP PRINCIPALE ───────────────────────────────────────────
+// ── APP ROOT ──────────────────────────────────────────────────
 export default function App() {
-  const [S, setS] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showApri, setShowApri] = useState(true);
+  const [lista,  setLista] = useState([]);
+  const [sopr,   setSopr]  = useState(null);
+  const [vista,  setV]     = useState("home");
+  const [showIA, setIA]    = useState(false);
+  const [saved,  setSaved] = useState(false);
+  const [analisi,setAnalisi]= useState("");
+  const [analLoad,setAL]   = useState(false);
+  const haKey = Boolean(akGet());
+  const refVerbale = useRef();
 
-  useEffect(() => {
-    const d = carica();
-    if (d) setS(d);
-  }, []);
+  useEffect(()=>{ setLista(dbLoad()); },[]);
 
-  useEffect(() => {
-    if (S) salva(S);
-  }, [S]);
+  const salvaLista = useCallback((nuova)=>{ setLista(nuova); dbSave(nuova); },[]);
 
-  const upd  = (k, v) => setS({ ...S, [k]: v });
-  const updT = (i, k, v) => {
-    const t = [...S.tecnici]; t[i] = { ...t[i], [k]: v }; upd("tecnici", t);
-  };
-  const addT = () => upd("tecnici", [...S.tecnici, { nome: "", ruolo: "" }]);
-  const delT = (i) => upd("tecnici", S.tecnici.filter((_, j) => j !== i));
+  // Auto-save sopralluogo corrente
+  useEffect(()=>{
+    if(!sopr) return;
+    const nuova = lista.map(s=>s.id===sopr.id?sopr:s);
+    salvaLista(nuova);
+    setSaved(true);
+    const t=setTimeout(()=>setSaved(false),1500);
+    return()=>clearTimeout(t);
+  },[sopr]);
 
-  const updR = (id, r) => upd("reparti", S.reparti.map(x => x.id === id ? r : x));
-  const delR = (id)    => upd("reparti", S.reparti.filter(x => x.id !== id));
-  const addR = ()      => upd("reparti", [...S.reparti, mkReparto()]);
+  // Updater
+  const updAmb  = useCallback((aId,k,v)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,[k]:v})})),[]);
+  const updEl   = useCallback((aId,eId,k,v)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:a.elementi.map(e=>e.id!==eId?e:{...e,[k]:v})})})),[]);
+  const updC    = useCallback((aId,eId,cId,k,v)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:a.elementi.map(e=>e.id!==eId?e:{...e,criticita:e.criticita.map(c=>c.id!==cId?c:{...c,[k]:v})})})})),[]);
+  const delAmb  = useCallback((aId)=>setSopr(s=>({...s,ambienti:s.ambienti.filter(a=>a.id!==aId)})),[]);
+  const addEl   = useCallback((aId)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:[...a.elementi,mkEl()]})})),[]);
+  const delEl   = useCallback((aId,eId)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:a.elementi.filter(e=>e.id!==eId)})})),[]);
+  const addC    = useCallback((aId,eId,c)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:a.elementi.map(e=>e.id!==eId?e:{...e,criticita:[...e.criticita,c]})})})),[]);
+  const delC    = useCallback((aId,eId,cId)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,elementi:a.elementi.map(e=>e.id!==eId?e:{...e,criticita:e.criticita.filter(c=>c.id!==cId)})})})),[]);
+  const addFoto = useCallback((aId,f)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,foto:[...(a.foto||[]),f]})})),[]);
+  const delFoto = useCallback((aId,fId)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,foto:(a.foto||[]).filter(f=>f.id!==fId)})})),[]);
+  const commFoto= useCallback((aId,fId,comm)=>setSopr(s=>({...s,ambienti:s.ambienti.map(a=>a.id!==aId?a:{...a,foto:(a.foto||[]).map(f=>f.id!==fId?f:{...f,comm})})})),[]);
 
-  const nuovo = () => {
-    if (S && !confirm("Sei sicuro? I dati attuali andranno persi (se non hai esportato il verbale).")) return;
-    setS(mkSopralluogo());
-    setShowApri(false);
-  };
-  const continua = () => { setShowApri(false); };
+  const ncTot = sopr?.ambienti.reduce((s,a)=>s+a.elementi.reduce((s2,e)=>s2+e.criticita.filter(c=>c.stato==="Aperta").length,0),0)||0;
 
-  const apriVerbale = () => {
-    const html = generaHTML(S);
-    const w = window.open("", "_blank");
-    if (!w) { alert("Il browser ha bloccato la finestra. Consenti i popup."); return; }
-    w.document.write(html);
-    w.document.close();
-  };
-
-  const esportaJSON = () => {
-    const json = {
-      destinatario: S.destinatario,
-      indirizzo_destinatario: S.indirizzo_destinatario,
-      data_sopralluogo_estesa: dataEstesa(S.data_sopralluogo),
-      data_sopralluogo_lunga: (() => {
-        const mesi = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
-        const [y, m, d] = S.data_sopralluogo.split("-");
-        const giorni = ["zero","uno","due","tre","quattro","cinque","sei","sette","otto","nove","dieci","undici","dodici","tredici","quattordici","quindici","sedici","diciassette","diciotto","diciannove","venti","ventuno","ventidue","ventitre","ventiquattro","venticinque","ventisei","ventisette","ventotto","ventinove","trenta","trentuno"];
-        return `L'anno ${y} addì ${giorni[parseInt(d)] || parseInt(d)} del mese di ${mesi[parseInt(m)-1]}`;
-      })(),
-      data_redazione: `Sassari, ${ggMmYyyy(S.data_redazione)}`,
-      is_aggiornamento: S.is_aggiornamento,
-      data_relazione_precedente: S.data_relazione_precedente ? dataEstesa(S.data_relazione_precedente) : "",
-      ruolo_tecnico: S.tecnici[0]?.ruolo || "",
-      tecnici: S.tecnici,
-      reparti: S.reparti.map(r => ({
-        nome: r.nome,
-        criticita: r.criticita.map(c => ({
-          livello: c.livello,
-          titolo: c.titolo,
-          tipo_reiterazione: c.tipo_reiterazione,
-          data_reiterato: c.data_reiterato ? dataEstesa(c.data_reiterato) : undefined,
-          descrizione: c.descrizione,
-          riferimenti: c.riferimenti,
-          misure: c.misure.filter(m => m.trim()),
-          foto: [], // foto base64 troppo pesanti per JSON skill
-        })),
-      })),
-      raccomandazioni_finali: S.raccomandazioni_finali || [],
-    };
-    const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `verbale_${(S.destinatario || "sopralluogo").replace(/\s+/g, "_")}_${S.data_sopralluogo}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Crea nuovo sopralluogo
+  const nuovoSopr = () => {
+    const s = mkSopr();
+    salvaLista([s,...lista]);
+    setSopr(s);
+    setV("editor");
   };
 
-  // ── SCHERMATA INIZIALE ───────────────────────────────────
-  if (!S || showApri) {
-    const esistente = carica();
-    return (
-      <div style={{ minHeight: "100vh", background: T.bg, padding: "20px 16px" }}>
-        <div style={{ maxWidth: 600, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 32, paddingTop: 20 }}>
-            <Shield size={48} style={{ color: T.accent }} />
-            <h1 style={{ fontSize: 22, margin: "12px 0 4px", color: T.ink }}>Sopralluoghi Sicurezza</h1>
-            <p style={{ fontSize: 12, color: T.muted, margin: 0 }}>ICHNOSSICUREZZA S.R.L. · D.Lgs. 81/08</p>
-          </div>
+  // Duplica
+  const duplica = (s) => {
+    const copia = {...JSON.parse(JSON.stringify(s)), id:uid(), nome:s.nome+" (copia)", creato:new Date().toISOString()};
+    salvaLista([copia,...lista]);
+  };
 
-          {esistente && (
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 }}>SOPRALLUOGO IN CORSO</div>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{esistente.destinatario || "(senza destinatario)"}</div>
-              <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>
-                Data: {ggMmYyyy(esistente.data_sopralluogo)} · {esistente.reparti.length} reparti · {esistente.reparti.reduce((s, r) => s + r.criticita.length, 0)} criticità
+  // Elimina
+  const elimina = (id) => {
+    if(!window.confirm("Eliminare questo sopralluogo?")) return;
+    salvaLista(lista.filter(s=>s.id!==id));
+    if(sopr?.id===id){ setSopr(null); setV("home"); }
+  };
+
+  // Carica vecchio verbale e confronta criticità
+  const caricaVecchioVerbale = async(e) => {
+    const file = e.target.files?.[0];
+    if(!file) return;
+    setAL(true);
+    try{
+      const testo = await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=ev=>res(ev.target.result);
+        r.onerror=()=>rej(new Error("Errore lettura"));
+        r.readAsText(file);
+      });
+      setSopr(s=>({...s,vecchioVerbale:testo.slice(0,3000)}));
+      // Analizza e marca criticità reiterate
+      const critAttuale = sopr?.ambienti.flatMap(a=>a.elementi.flatMap(e=>e.criticita.map(c=>c.titolo||c.descr))).filter(Boolean).join("\n");
+      if(critAttuale && akGet()){
+        const risposta = await callAI(`Sei un RSPP. Confronta queste criticità del NUOVO sopralluogo con il VECCHIO verbale allegato. Per ogni criticità del nuovo, indica se è REITERATA (presente anche nel vecchio) o NUOVA. Rispondi SOLO con un JSON array: [{"titolo":"...","reiterata":true/false}]. Vecchio verbale: "${testo.slice(0,2000)}". Nuove criticità: "${critAttuale}"`, 800);
+        try{
+          const arr = JSON.parse(risposta.replace(/```json|```/g,"").trim());
+          setSopr(s=>({...s,ambienti:s.ambienti.map(a=>({...a,elementi:a.elementi.map(e=>({...e,criticita:e.criticita.map(c=>{const match=arr.find(x=>x.titolo&&(c.titolo||"").toLowerCase().includes(x.titolo.toLowerCase().slice(0,15)));return match?{...c,reiterata:match.reiterata}:c;})}))}))})});
+          setAnalisi(`Analisi completata: ${arr.filter(x=>x.reiterata).length} criticità reiterate rilevate.`);
+        }catch(){ setAnalisi("Verbale caricato. Analisi automatica non disponibile."); }
+      } else {
+        setAnalisi("Verbale caricato. Aggiungi le criticità e ricarica per il confronto automatico.");
+      }
+    }catch(ex){ setAnalisi("Errore: "+ex.message); }
+    finally{ setAL(false); e.target.value=""; }
+  };
+
+  // Esporta verbale
+  const scaricaHTML = () => {
+    const html=generaHTML(sopr);
+    const blob=new Blob([html],{type:"text/html;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`Verbale_${(sopr.azienda||"sopralluogo").replace(/\s+/g,"_")}_${sopr.data}.html`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  };
+
+  const stampa = () => {
+    const html=generaHTML(sopr);
+    const blob=new Blob([html],{type:"text/html;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const w=window.open(url,"_blank");
+    if(w) setTimeout(()=>w.print(),1000);
+  };
+
+  // Genera conclusioni AI
+  const generaConcl = async() => {
+    if(!akGet()){setIA(true);return;}
+    try{
+      const c=await callAI(`Sei un RSPP. Scrivi le conclusioni per un verbale di sopralluogo presso "${sopr.azienda||"azienda"}" del ${sopr.data}. Ambienti visitati: ${sopr.ambienti.map(a=>nM(a.nome,a.nomeL)).filter(Boolean).join(", ")||"nessuno"}. Criticità aperte: ${ncTot}. Scrivi 2-3 frasi professionali e concrete. Non citare articoli di legge. Solo il testo.`);
+      setSopr(s=>({...s,concl:c}));
+    }catch(ex){if(ex.message==="NO_KEY")setIA(true);}
+  };
+
+  const pg={background:T.bg,minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif"};
+  const wr={maxWidth:620,margin:"0 auto",padding:"16px 14px 90px"};
+
+  // ── HOME ────────────────────────────────────────────────────
+  if(vista==="home") return (
+    <div style={pg}><div style={{...wr,paddingTop:30}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+        <div style={{width:44,height:44,borderRadius:12,background:T.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Shield size={24} color="#fff"/></div>
+        <div>
+          <h2 style={{margin:0,fontFamily:"Georgia,serif",fontSize:18}}>Ichnossicurezza</h2>
+          <p style={{margin:0,fontSize:12,color:T.muted}}>Gestione Sopralluoghi — D.Lgs. 81/2008</p>
+        </div>
+        <button onClick={()=>setIA(true)} style={{marginLeft:"auto",padding:"6px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,color:haKey?T.ok:T.warn,display:"flex",alignItems:"center",gap:4}}>
+          <Key size={12}/>{haKey?"IA ✓":"IA"}
+        </button>
+      </div>
+
+      <Btn onClick={nuovoSopr} full sz="l" icon={<Plus size={16}/>} style={{marginBottom:16}}>Nuovo sopralluogo</Btn>
+
+      {lista.length===0&&(
+        <div style={{textAlign:"center",padding:"40px 20px",borderRadius:12,border:`2px dashed ${T.border}`}}>
+          <FolderOpen size={28} style={{color:T.muted,marginBottom:8}}/>
+          <p style={{color:T.muted,fontSize:13,margin:0}}>Nessun sopralluogo salvato</p>
+        </div>
+      )}
+
+      {lista.map(s=>{
+        const nc=s.ambienti.reduce((tot,a)=>tot+a.elementi.reduce((t2,e)=>t2+e.criticita.filter(c=>c.stato==="Aperta").length,0),0);
+        const reit=s.ambienti.reduce((tot,a)=>tot+a.elementi.reduce((t2,e)=>t2+e.criticita.filter(c=>c.reiterata&&c.stato==="Aperta").length,0),0);
+        return (
+          <Card key={s.id} style={{padding:14}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.azienda||s.nome}</div>
+                <div style={{fontSize:12,color:T.muted,marginBottom:6}}>{s.data} · {s.tipo} · {s.tecnico||"—"}</div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  <Bdg color="gray">{s.ambienti.length} amb.</Bdg>
+                  {nc>0&&<Bdg color="red">{nc} NC</Bdg>}
+                  {reit>0&&<Bdg color="yellow">{reit} reit.</Bdg>}
+                </div>
               </div>
-              <Btn variant="primary" full icon={<ChevronRight size={14} />} onClick={continua}>Continua</Btn>
+              <div style={{display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <Btn v="p" sz="s" onClick={()=>{setSopr(s);setV("editor");}} icon={<FolderOpen size={12}/>}>Apri</Btn>
+                <Btn v="s" sz="xs" onClick={()=>duplica(s)} icon={<Copy size={11}/>}>Duplica</Btn>
+                <Btn v="d" sz="xs" onClick={()=>elimina(s.id)} icon={<Trash2 size={11}/>}>Elimina</Btn>
+              </div>
             </div>
-          )}
+          </Card>
+        );
+      })}
+    </div>
+    {showIA&&<ModalIA onClose={()=>setIA(false)}/>}
+    <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
-          <Btn variant={esistente ? "ghost" : "primary"} full sz="lg" icon={<Plus size={16} />} onClick={nuovo}>
-            Nuovo sopralluogo
-          </Btn>
-
-          <div style={{ marginTop: 20, textAlign: "center" }}>
-            <button onClick={() => setShowSettings(true)} style={{
-              background: "transparent", border: "none", color: T.muted, fontSize: 12, cursor: "pointer",
-              display: "inline-flex", alignItems: "center", gap: 4,
-            }}>
-              <Settings size={12} /> Impostazioni IA {getApiKey() ? "✓" : "(non configurata)"}
-            </button>
-          </div>
-
-          {showSettings && <ModalSettings onClose={() => setShowSettings(false)} />}
-        </div>
+  // ── VERBALE ─────────────────────────────────────────────────
+  if(vista==="verbale") return (
+    <div style={pg}><div style={wr}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+        <button onClick={()=>setV("editor")} style={{padding:8,borderRadius:8,border:`1px solid ${T.border}`,background:"#fff",cursor:"pointer"}}><ArrowLeft size={16}/></button>
+        <h3 style={{margin:0,fontFamily:"Georgia,serif"}}>Verbale di sopralluogo</h3>
       </div>
-    );
-  }
 
-  // ── EDITOR ───────────────────────────────────────────────
-  const totC = S.reparti.reduce((s, r) => s + r.criticita.length, 0);
+      <Card style={{padding:16,marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:700,color:T.muted}}>CONCLUSIONI</span>
+          <Btn v="a" sz="xs" onClick={generaConcl} icon={<Sparkles size={11}/>}>Genera con IA</Btn>
+        </div>
+        <Inp value={sopr.concl||""} onChange={v=>setSopr(s=>({...s,concl:v}))} placeholder="Conclusioni del sopralluogo..." rows={5}/>
+      </Card>
+
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <Btn onClick={stampa} full sz="m" icon={<Download size={14}/>}>Stampa / PDF</Btn>
+        <Btn onClick={scaricaHTML} v="s" full sz="m" icon={<FileText size={14}/>}>Scarica HTML (Word)</Btn>
+      </div>
+      <p style={{fontSize:11,color:T.muted,textAlign:"center",margin:"4px 0 0"}}>Il file HTML aperto in Word si salva come .docx</p>
+    </div>
+    {showIA&&<ModalIA onClose={()=>setIA(false)}/>}
+    <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  // ── EDITOR ──────────────────────────────────────────────────
+  const idVerbale = useState(()=>"vb"+uid())[0];
   return (
-    <div style={{ minHeight: "100vh", background: T.bg }}>
-      {/* Header sticky */}
-      <div style={{
-        position: "sticky", top: 0, zIndex: 10, background: T.ink, color: "#fff",
-        padding: "10px 16px", display: "flex", alignItems: "center", gap: 8,
-      }}>
-        <button onClick={() => setShowApri(true)} style={{
-          background: "transparent", border: "none", color: "#fff", cursor: "pointer", padding: 4
-        }}><ArrowLeft size={20} /></button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, opacity: 0.6, textTransform: "uppercase", letterSpacing: 0.5 }}>Sopralluogo</div>
-          <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {S.destinatario || "(nuovo)"}
+    <div style={pg}><div style={wr}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+        <button onClick={()=>{setV("home");}} style={{padding:8,borderRadius:8,border:`1px solid ${T.border}`,background:"#fff",cursor:"pointer"}}><ArrowLeft size={16}/></button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:700,fontFamily:"Georgia,serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sopr.azienda||sopr.nome}</div>
+          <div style={{fontSize:11,color:T.muted,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            {sopr.data}{ncTot>0&&<Bdg color="red">{ncTot} NC</Bdg>}{saved&&<span style={{color:T.ok,fontWeight:700}}>✓</span>}
           </div>
         </div>
-        <button onClick={() => setShowSettings(true)} style={{
-          background: "transparent", border: "none", color: "#fff", cursor: "pointer", padding: 4
-        }}><Settings size={18} /></button>
+        <button onClick={()=>setIA(true)} style={{padding:"5px 9px",borderRadius:8,border:`1px solid ${T.border}`,background:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,color:haKey?T.ok:T.warn,display:"flex",alignItems:"center",gap:3}}><Key size={11}/>{haKey?"IA":"IA⚠"}</button>
+        <Btn onClick={()=>setV("verbale")} sz="s" icon={<FileText size={13}/>}>Verbale</Btn>
       </div>
 
-      <div style={{ maxWidth: 700, margin: "0 auto", padding: "16px 16px 100px" }}>
-
-        {/* DATI ANAGRAFICI */}
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-          <h3 style={{ margin: "0 0 12px", fontSize: 14, color: T.accent }}>📋 Dati del sopralluogo</h3>
-          <Field label="Destinatario (azienda o ente)">
-            <Input value={S.destinatario} onChange={e => upd("destinatario", e.target.value)} placeholder="DUO PC CALCESTRUZZI S.R.L." />
-          </Field>
-          <Field label="Indirizzo completo">
-            <Input value={S.indirizzo_destinatario} onChange={e => upd("indirizzo_destinatario", e.target.value)} placeholder="Via .., snc - 07XXX Comune (SS)" />
-          </Field>
-          <Field label="Tipologia destinatario">
-            <Select value={S.tipologia_destinatario} onChange={e => upd("tipologia_destinatario", e.target.value)}>
-              <option value="privato">Privato (azienda/S.R.L./S.p.A.)</option>
-              <option value="pubblico">Pubblico (Comune/Ente)</option>
-            </Select>
-          </Field>
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <Field label="Data sopralluogo">
-                <Input type="date" value={S.data_sopralluogo} onChange={e => upd("data_sopralluogo", e.target.value)} />
-              </Field>
-            </div>
-            <div style={{ flex: 1 }}>
-              <Field label="Data redazione">
-                <Input type="date" value={S.data_redazione} onChange={e => upd("data_redazione", e.target.value)} />
-              </Field>
-            </div>
-          </div>
-          <Field>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-              <input type="checkbox" checked={S.is_aggiornamento} onChange={e => upd("is_aggiornamento", e.target.checked)} />
-              È aggiornamento di un verbale precedente
-            </label>
-          </Field>
-          {S.is_aggiornamento && (
-            <Field label="Data verbale precedente">
-              <Input type="date" value={S.data_relazione_precedente} onChange={e => upd("data_relazione_precedente", e.target.value)} />
-            </Field>
-          )}
+      {/* Dati generali */}
+      <Card style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Dati sopralluogo</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Fld label="Azienda"><Inp value={sopr.azienda} onChange={v=>setSopr(s=>({...s,azienda:v}))} placeholder="Ragione sociale"/></Fld>
+          <Fld label="Sede"><Inp value={sopr.sede} onChange={v=>setSopr(s=>({...s,sede:v}))} placeholder="Sede"/></Fld>
         </div>
-
-        {/* TECNICI */}
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-          <h3 style={{ margin: "0 0 12px", fontSize: 14, color: T.accent }}>👤 Tecnici firmatari</h3>
-          {S.tecnici.map((t, i) => (
-            <div key={i} style={{ background: T.paper, padding: 10, borderRadius: 8, marginBottom: 8, border: `1px solid ${T.border}` }}>
-              <Field label={`Tecnico #${i+1} — Nome`}>
-                <Input value={t.nome} onChange={e => updT(i, "nome", e.target.value)} placeholder="Dott. Falchi Giancarlo" />
-              </Field>
-              <Field label="Ruolo">
-                <Input value={t.ruolo} onChange={e => updT(i, "ruolo", e.target.value)} placeholder="Consulente esterno..." />
-              </Field>
-              {S.tecnici.length > 1 && (
-                <Btn variant="danger" sz="sm" icon={<Trash2 size={12} />} onClick={() => delT(i)}>Rimuovi tecnico</Btn>
-              )}
-            </div>
-          ))}
-          <Btn variant="ghost" sz="sm" icon={<Plus size={12} />} onClick={addT} full>Aggiungi tecnico</Btn>
+        <Fld label="Indirizzo"><Inp value={sopr.indirizzo} onChange={v=>setSopr(s=>({...s,indirizzo:v}))} placeholder="Via, città"/></Fld>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Fld label="N° lavoratori"><Inp type="number" value={sopr.nLav} onChange={v=>setSopr(s=>({...s,nLav:v}))}/></Fld>
+          <Fld label="Data"><Inp type="date" value={sopr.data} onChange={v=>setSopr(s=>({...s,data:v}))}/></Fld>
         </div>
-
-        {/* REPARTI */}
-        <div style={{ marginBottom: 14 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 14, color: T.accent, padding: "0 4px" }}>
-            🏭 Reparti e criticità ({totC})
-          </h3>
-          {S.reparti.map((r, i) => (
-            <RepartoCard
-              key={r.id} r={r} idx={i}
-              onChange={x => updR(r.id, x)}
-              onDelete={() => delR(r.id)}
-            />
-          ))}
-          <Btn variant="primary" full sz="lg" icon={<Plus size={16} />} onClick={addR}>Aggiungi reparto</Btn>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Fld label="Consulente RSPP"><Inp value={sopr.tecnico} onChange={v=>setSopr(s=>({...s,tecnico:v}))} placeholder="Nome cognome"/></Fld>
+          <Fld label="Tipo"><Sel value={sopr.tipo} onChange={v=>setSopr(s=>({...s,tipo:v}))} options={TIPI}/></Fld>
         </div>
+        <Fld label="Note generali"><Inp value={sopr.note} onChange={v=>setSopr(s=>({...s,note:v}))} placeholder="Condizioni generali, presenti al sopralluogo..." rows={2}/></Fld>
+      </Card>
 
+      {/* Carica vecchio verbale */}
+      <Card style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Confronto con vecchio verbale</div>
+        <p style={{fontSize:12,color:T.muted,margin:"0 0 10px"}}>Carica il vecchio verbale (HTML/TXT) per identificare automaticamente le criticità reiterate.</p>
+        <label htmlFor={idVerbale} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:8,border:`2px dashed ${T.border}`,cursor:"pointer",background:sopr.vecchioVerbale?"#F0FDF4":"#fff"}}>
+          {analLoad?<Loader2 size={16} style={{color:T.purple,animation:"spin 1s linear infinite"}}/>:<Upload size={16} style={{color:sopr.vecchioVerbale?T.ok:T.muted}}/>}
+          <span style={{fontSize:13,fontWeight:600,color:sopr.vecchioVerbale?T.ok:T.muted}}>{sopr.vecchioVerbale?"✓ Verbale caricato":"Carica vecchio verbale (.html, .txt)"}</span>
+          <input id={idVerbale} type="file" accept=".html,.htm,.txt" onChange={caricaVecchioVerbale} style={{display:"none"}}/>
+        </label>
+        {analisi&&<p style={{fontSize:12,color:T.ok,margin:"8px 0 0",fontWeight:600}}>{analisi}</p>}
+        {sopr.vecchioVerbale&&<button onClick={()=>setSopr(s=>({...s,vecchioVerbale:""}))} style={{fontSize:11,color:T.err,border:"none",background:"transparent",cursor:"pointer",marginTop:4}}>Rimuovi verbale caricato</button>}
+      </Card>
+
+      {/* Ambienti */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <span style={{fontSize:14,fontWeight:700}}>Ambienti ({sopr.ambienti.length})</span>
+        <Btn onClick={()=>setSopr(s=>({...s,ambienti:[...s.ambienti,mkAmb()]}))} sz="s" icon={<Plus size={13}/>}>Aggiungi</Btn>
       </div>
 
-      {/* Bottom bar azioni */}
-      <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(247,244,239,0.97)",
-        borderTop: `1px solid ${T.border}`, padding: "10px 16px", backdropFilter: "blur(8px)", zIndex: 20,
-      }}>
-        <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", gap: 8 }}>
-          <Btn variant="ghost" icon={<Download size={14} />} onClick={esportaJSON}>JSON</Btn>
-          <Btn variant="primary" icon={<FileText size={14} />} onClick={apriVerbale} full>Genera verbale</Btn>
+      {sopr.ambienti.length===0&&(
+        <div style={{textAlign:"center",padding:"28px 20px",borderRadius:12,border:`2px dashed ${T.border}`,marginBottom:12}}>
+          <MapPin size={22} style={{color:T.muted,marginBottom:6}}/><p style={{color:T.muted,fontSize:13,margin:0}}>Aggiungi il primo ambiente visitato</p>
+        </div>
+      )}
+
+      {sopr.ambienti.map((a,ai)=>(
+        <AmbCard key={a.id} a={a} ai={ai}
+          updAmb={updAmb} updEl={updEl} updC={updC}
+          addEl={addEl} delEl={delEl} addC={addC} delC={delC}
+          addFoto={addFoto} delFoto={delFoto} commFoto={commFoto}
+          delAmb={delAmb} setIA={setIA}/>
+      ))}
+
+      {sopr.ambienti.length>0&&<Btn onClick={()=>setV("verbale")} full sz="l" icon={<FileText size={15}/>} style={{marginTop:4}}>Genera verbale</Btn>}
+    </div>
+
+    {/* Bottom bar */}
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(245,242,237,0.96)",borderTop:`1px solid ${T.border}`,padding:"9px 16px"}}>
+      <div style={{maxWidth:620,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:5}}><Shield size={12} style={{color:T.accent}}/><span style={{fontSize:11,fontWeight:700,color:T.accent}}>Ichnossicurezza</span></div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {ncTot>0&&<Bdg color="red">{ncTot} NC</Bdg>}
+          <span style={{fontSize:11,color:T.muted}}>{sopr.ambienti.length} ambienti</span>
+          {saved&&<span style={{fontSize:11,color:T.ok,fontWeight:700}}>✓ Salvato</span>}
         </div>
       </div>
-
-      {showSettings && <ModalSettings onClose={() => setShowSettings(false)} />}
+    </div>
+    {showIA&&<ModalIA onClose={()=>setIA(false)}/>}
+    <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
