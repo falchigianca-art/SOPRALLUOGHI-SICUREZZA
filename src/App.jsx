@@ -526,7 +526,7 @@ export default function App() {
         const risposta = await callAI(`Sei un RSPP. Confronta queste criticità del NUOVO sopralluogo con il VECCHIO verbale allegato. Per ogni criticità del nuovo, indica se è REITERATA (presente anche nel vecchio) o NUOVA. Rispondi SOLO con un JSON array: [{"titolo":"...","reiterata":true/false}]. Vecchio verbale: "${testo.slice(0,2000)}". Nuove criticità: "${critAttuale}"`, 800);
         try{
           const arr = JSON.parse(risposta.replace(/```json|```/g,"").trim());
-          setSopr(s=>({...s,ambienti:s.ambienti.map(a=>({...a,elementi:a.elementi.map(e=>({...e,criticita:e.criticita.map(c=>{const match=arr.find(x=>x.titolo&&(c.titolo||"").toLowerCase().includes(x.titolo.toLowerCase().slice(0,15)));return match?{...c,reiterata:match.reiterata}:c;})}))}))})});
+          setSopr(s=>({...s,ambienti:s.ambienti.map(a=>({...a,elementi:a.elementi.map(e=>({...e,criticita:e.criticita.map(c=>{const match=arr.find(x=>x.titolo&&(c.titolo||"").toLowerCase().includes(x.titolo.toLowerCase().slice(0,15)));return match?{...c,reiterata:match.reiterata}:c;})}))}))}))
           setAnalisi(`Analisi completata: ${arr.filter(x=>x.reiterata).length} criticità reiterate rilevate.`);
         }catch(){ setAnalisi("Verbale caricato. Analisi automatica non disponibile."); }
       } else {
