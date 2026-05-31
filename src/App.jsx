@@ -456,6 +456,7 @@ export default function App() {
   const [analLoad,setAL]   = useState(false);
   const haKey = Boolean(akGet());
   const refVerbale = useRef();
+  const idVerbale = useState(()=>"vb"+uid())[0];
 
   useEffect(()=>{ setLista(dbLoad()); },[]);
 
@@ -464,8 +465,12 @@ export default function App() {
   // Auto-save sopralluogo corrente
   useEffect(()=>{
     if(!sopr) return;
-    const nuova = lista.map(s=>s.id===sopr.id?sopr:s);
-    salvaLista(nuova);
+    setLista(prev=>{
+      const esiste = prev.find(s=>s.id===sopr.id);
+      const nuova = esiste ? prev.map(s=>s.id===sopr.id?sopr:s) : [sopr,...prev];
+      dbSave(nuova);
+      return nuova;
+    });
     setSaved(true);
     const t=setTimeout(()=>setSaved(false),1500);
     return()=>clearTimeout(t);
@@ -489,22 +494,21 @@ export default function App() {
   // Crea nuovo sopralluogo
   const nuovoSopr = () => {
     const s = mkSopr();
-    salvaLista([s,...lista]);
     setSopr(s);
     setV("editor");
   };
 
   // Duplica
   const duplica = (s) => {
-    const copia = {...JSON.parse(JSON.stringify(s)), id:uid(), nome:s.nome+" (copia)", creato:new Date().toISOString()};
-    salvaLista([copia,...lista]);
+    const copia = Object.assign({}, JSON.parse(JSON.stringify(s)), {id:uid(), nome:s.nome+" (copia)", creato:new Date().toISOString()});
+    setLista(function(prev){ const n=[copia,...prev]; dbSave(n); return n; });
   };
 
   // Elimina
   const elimina = (id) => {
     if(!window.confirm("Eliminare questo sopralluogo?")) return;
-    salvaLista(lista.filter(s=>s.id!==id));
-    if(sopr?.id===id){ setSopr(null); setV("home"); }
+    setLista(function(prev){ const n=prev.filter(function(s){ return s.id!==id; }); dbSave(n); return n; });
+    if(sopr && sopr.id===id){ setSopr(null); setV("home"); }
   };
 
   // Carica vecchio verbale e confronta criticità
@@ -663,7 +667,6 @@ export default function App() {
   );
 
   // ── EDITOR ──────────────────────────────────────────────────
-  const idVerbale = useState(()=>"vb"+uid())[0];
   return (
     <div style={pg}><div style={wr}>
       {/* Header */}
