@@ -523,14 +523,30 @@ export default function App() {
       // Analizza e marca criticità reiterate
       const critAttuale = sopr?.ambienti.flatMap(a=>a.elementi.flatMap(e=>e.criticita.map(c=>c.titolo||c.descr))).filter(Boolean).join("\n");
       if(critAttuale && akGet()){
-        const risposta = await callAI(`Sei un RSPP. Confronta queste criticità del NUOVO sopralluogo con il VECCHIO verbale allegato. Per ogni criticità del nuovo, indica se è REITERATA (presente anche nel vecchio) o NUOVA. Rispondi SOLO con un JSON array: [{"titolo":"...","reiterata":true/false}]. Vecchio verbale: "${testo.slice(0,2000)}". Nuove criticità: "${critAttuale}"`, 800);
+        const prompt = "Sei un RSPP. Confronta queste criticita del NUOVO sopralluogo con il VECCHIO verbale. Per ogni criticita indica se e REITERATA o NUOVA. Rispondi SOLO con JSON array: [{titolo:string,reiterata:bool}]. Vecchio verbale: " + testo.slice(0,1500) + " --- Nuove criticita: " + critAttuale;
+        const risposta = await callAI(prompt, 800);
         try{
           const arr = JSON.parse(risposta.replace(/```json|```/g,"").trim());
-          setSopr(s=>({...s,ambienti:s.ambienti.map(a=>({...a,elementi:a.elementi.map(e=>({...e,criticita:e.criticita.map(c=>{const match=arr.find(x=>x.titolo&&(c.titolo||"").toLowerCase().includes(x.titolo.toLowerCase().slice(0,15)));return match?{...c,reiterata:match.reiterata}:c;})}))}))}))
-          setAnalisi(`Analisi completata: ${arr.filter(x=>x.reiterata).length} criticità reiterate rilevate.`);
-        }catch(){ setAnalisi("Verbale caricato. Analisi automatica non disponibile."); }
+          const conta = arr.filter(function(x){ return x.reiterata; }).length;
+          setSopr(function(prev){
+            const newAmb = prev.ambienti.map(function(a){
+              const newEl = a.elementi.map(function(e){
+                const newCrit = e.criticita.map(function(c){
+                  const titC = (c.titolo||"").toLowerCase();
+                  const found = arr.find(function(x){ return x.titolo && titC.includes(x.titolo.toLowerCase().slice(0,15)); });
+                  if(found){ return Object.assign({}, c, {reiterata: found.reiterata}); }
+                  return c;
+                });
+                return Object.assign({}, e, {criticita: newCrit});
+              });
+              return Object.assign({}, a, {elementi: newEl});
+            });
+            return Object.assign({}, prev, {ambienti: newAmb});
+          });
+          setAnalisi("Analisi completata: " + conta + " criticita reiterate.");
+        }catch(e2){ setAnalisi("Verbale caricato. Analisi non disponibile."); }
       } else {
-        setAnalisi("Verbale caricato. Aggiungi le criticità e ricarica per il confronto automatico.");
+        setAnalisi("Verbale caricato. Aggiungi criticita e ricarica per il confronto.");
       }
     }catch(ex){ setAnalisi("Errore: "+ex.message); }
     finally{ setAL(false); e.target.value=""; }
