@@ -308,16 +308,16 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
           <Fld label="Descrizione tecnica">
             <AIField value={c.descr} onChange={v=>updC(rId,c.id,"descr",v)}
               placeholder="Descrizione tecnica della criticità rilevata..." rows={3}
-              promptEmpty={`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per questa non conformità rilevata durante un sopralluogo: "${c.titolo||"criticità"}". Livello: ${c.livello==="ELEVATA"?"ELEVATA — intervento urgente e inderogabile":c.livello==="MEDIA"?"MEDIA — intervento da pianificare a breve":"LIEVE — intervento di miglioramento"}". Stile: oggettivo, tecnico-formale, terza persona. Descrivi cosa è stato rilevato, dove, in che condizioni e perché costituisce un rischio. Usa frasi come "È stata riscontrata", "Si è rilevata la presenza di", "È emersa la necessità di". Varia la formulazione. NON citare articoli di legge nel testo. NON usare "Durante il sopralluogo è stato riscontrato" come frase iniziale fissa. Max 4 frasi. Solo il testo della descrizione.`}
-              promptFull={v=>`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Migliora questa descrizione tecnica rendendola più professionale e precisa, nello stile dei verbali di sopralluogo Ichnossicurezza. Usa frasi oggettive in terza persona come "È stata riscontrata", "Si è rilevata". NON citare leggi. NON iniziare con "Durante il sopralluogo". Testo originale: "${v}". Rispondi solo con la descrizione migliorata.`}
+              promptEmpty={`Sei il redattore dei verbali di sopralluogo di Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per questa criticità: "${c.titolo||"criticità"}" (livello: ${c.livello}). REGOLE ASSOLUTE: 1) Max 3 frasi brevi e dirette. 2) Inizia con una di queste formule variando: "È stata riscontrata", "È stato rilevato", "Si è riscontrata la presenza di", "È stata rilevata", "È emersa", "Si rileva". 3) Descrivi SOLO cosa c'è fisicamente, dove si trova, perché è pericoloso. 4) NON citare mai leggi o articoli. 5) NON usare mai "Durante il sopralluogo è stato riscontrato" come formula fissa. 6) Stile asciutto, niente frasi lunghe. Rispondi SOLO con la descrizione, nient'altro.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione rispettando: frasi brevi e dirette, terza persona, NON citare leggi, NON usare "Durante il sopralluogo è stato riscontrato" come apertura fissa, max 3 frasi. Testo: "${v}". Rispondi SOLO con la descrizione riscritta.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
           <Fld label="Misura preventiva / correttiva">
             <AIField value={c.misure} onChange={v=>updC(rId,c.id,"misure",v)}
               placeholder="Misure correttive da adottare..." rows={3}
-              promptEmpty={`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Per questa non conformità: "${c.descr||c.titolo||"criticità"}" (livello ${c.livello}), redigi le misure correttive nello stile dei verbali Ichnossicurezza. Formato: elenco numerato 1. 2. 3. (max 4 punti). Ogni misura deve essere concreta, specifica e immediatamente applicabile. Inizia ogni punto con un verbo all'infinito o imperativo (es. "Provvedere a...", "Installare...", "Verificare...", "Sostituire...", "Predisporre..."). NON citare articoli di legge. NON usare formule generiche. Solo l'elenco numerato delle misure.`}
-              promptFull={v=>`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Migliora queste misure correttive rendendole più specifiche e tecniche, nello stile dei verbali Ichnossicurezza (elenco numerato, verbi concreti, nessun riferimento normativo esplicito). Misure originali: "${v}". Solo le misure migliorate in formato elenco numerato.`}
+              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Per questa criticità: "${c.descr||c.titolo||"criticità"}", scrivi le misure correttive. FORMATO OBBLIGATORIO ESATTO: ogni riga inizia con "1." "2." "3." ecc. Ogni misura: verbo concreto + azione specifica. Esempi di apertura: "Provvedere a...", "Installare...", "Verificare...", "Sostituire...", "Apporre...", "Garantire...", "Disporre...", "Rimuovere...", "Effettuare...". Max 4 misure. Frasi brevi. NON citare leggi. NON usare formule generiche. Rispondi SOLO con l'elenco numerato.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi queste misure: ogni punto numerato, verbo concreto, frasi brevi, NON citare leggi. Misure: "${v}". Rispondi SOLO con l'elenco numerato migliorato.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
@@ -468,7 +468,7 @@ h3{font-size:14px;color:#44403C;margin:18px 0 10px}
 .crit-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .crit-title{font-weight:700;font-size:14px}
 .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700}
-.reit-banner{background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;font-weight:700;color:#92400E}
+.reit-banner{background:#FFFBEB;border-left:4px solid #F59E0B;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400E;font-style:italic}
 table{width:100%;border-collapse:collapse;margin:14px 0;font-size:12px}
 th{background:#1A1614;color:#fff;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
 td{padding:8px 12px;border-bottom:1px solid #E2DDD6;vertical-align:top}
@@ -536,7 +536,7 @@ ${s.reparti.map((r,ri)=>{
         <span class="badge" style="background:${bgLiv(c.livello)};color:${txLiv(c.livello)};border:1px solid ${brdLiv(c.livello)}">${c.livello}</span>
         ${c.reiterata?`<span class="badge" style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A">⟳ REITERATA</span>`:""}
       </div>
-      ${c.reiterata?`<div class="reit-banner">⚠ RILIEVO REITERATO — Criticità già segnalata nel precedente verbale e non ancora risolta.</div>`:""}
+      ${c.reiterata?`<div class="reit-banner"><em>⚠ RILIEVO REITERATO – Criticità già segnalata nella Relazione di Sopralluogo precedente e non risolta.</em></div>`:""}
       ${c.descr?`<p style="margin-bottom:10px"><strong>Descrizione:</strong> ${c.descr}</p>`:""}
       ${c.misure?`<p style="margin-bottom:10px"><strong>Misura correttiva:</strong> ${c.misure}</p>`:""}
       ${c.note?`<p style="margin-bottom:0;font-style:italic;font-size:12px;color:#7A736B">Nota: ${c.note}</p>`:""}
