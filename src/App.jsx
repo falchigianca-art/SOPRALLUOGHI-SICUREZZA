@@ -441,7 +441,7 @@ const generaHTML = (s) => {
   const bgLiv=(l)=>l==="ELEVATA"?"#FEF2F2":l==="MEDIA"?"#FFFBEB":"#F0FDF4";
   const brdLiv=(l)=>l==="ELEVATA"?"#FECACA":l==="MEDIA"?"#FDE68A":"#BBF7D0";
   const txLiv=(l)=>l==="ELEVATA"?"#991B1B":l==="MEDIA"?"#92400E":"#14532D";
-  const emLiv=(l)=>l==="ELEVATA"?"🔴":"l==="MEDIA"?"🟠":"🟢";
+  const emLiv=(l)=>l==="ELEVATA"?"🔴":l==="MEDIA"?"🟠":"🟢";
   const dataExt=dataIT(s.data);
 
   // Pulizia testo da markdown
@@ -542,7 +542,7 @@ ${s.reparti.map((r,ri)=>{
     </td>
     <td class="crit-col">
       <div class="lv-badge" style="color:${txLiv(c.livello)}">
-        ${c.livello==="ELEVATA"?"🔴":"c.livello==="MEDIA"?"🟠":"🟢"} CRITICITÀ ${c.livello}
+        ${c.livello==="ELEVATA"?"🔴":c.livello==="MEDIA"?"🟠":"🟢"} CRITICITÀ ${c.livello}
       </div>
       ${c.reiterata?`<div class="reit-banner">⚠ RILIEVO REITERATO – Criticità già segnalata nella Relazione di Sopralluogo precedente e non risolta.</div>`:""}
       <div class="crit-title">${c.titolo||"Criticità"}</div>
@@ -559,7 +559,7 @@ ${s.reparti.map((r,ri)=>{
 <h2>RIEPILOGO CRITICITÀ RILEVATE</h2>
 <table class="riepilogo">
 <tr><th>N°</th><th>Criticità</th><th>Livello</th><th>Note</th></tr>
-${aperte.map((c,i)=>`<tr><td>${i+1}</td><td>${c.rep} — ${c.titolo||"—"}</td><td style="color:${txLiv(c.livello)};font-weight:700">${c.livello==="ELEVATA"?"🔴":"c.livello==="MEDIA"?"🟠":"🟢"} ${c.livello}</td><td>${c.reiterata?"<em>REITERATO</em>":"—"}</td></tr>`).join("")}
+${aperte.map((c,i)=>`<tr><td>${i+1}</td><td>${c.rep} — ${c.titolo||"—"}</td><td style="color:${txLiv(c.livello)};font-weight:700">${c.livello==="ELEVATA"?"🔴":c.livello==="MEDIA"?"🟠":"🟢"} ${c.livello}</td><td>${c.reiterata?"<em>REITERATO</em>":"—"}</td></tr>`).join("")}
 </table>
 
 ${s.note?`<div class="ricorda"><strong>Si ricorda, inoltre:</strong><br>${clean(s.note)}</div>`:""}
