@@ -245,6 +245,7 @@ const FotoBox = ({foto,onAdd,onDel,onComm,compact=false}) => {
 // ── EDITOR MISURE (lista modificabile con X) ─────────────────
 const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
   const [load,setLoad]=useState(false);
+  const [loadM,setLoadM]=useState(null);
   const [err,setErr]=useState("");
   const misure = Array.isArray(c.misure)?c.misure:(c.misure?String(c.misure).split("\n").filter(x=>x.trim()).map(x=>({id:uid(),testo:x.replace(/^\d+\.?\s*/,"")})):[]);
 
@@ -264,6 +265,18 @@ const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
   const updMisura=(mId,testo)=>updC(rId,c.id,"misure",misure.map(m=>m.id===mId?{...m,testo}:m));
   const delMisura=(mId)=>updC(rId,c.id,"misure",misure.filter(m=>m.id!==mId));
   const addMisura=()=>updC(rId,c.id,"misure",[...misure,{id:uid(),testo:""}]);
+  const migliora=async(mId,testo)=>{
+    if(!testo.trim())return;
+    setLoadM(mId);setErr("");
+    try{
+      const rep=repNome||"reparto";
+      const prompt="Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa misura correttiva in modo tecnico, semplice e diretto, senza renderla lunga. Reparto: \""+rep+"\". REGOLE: inizia con un verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); UNA sola frase breve; NON citare leggi, decreti, norme UNI, valori numerici; usa il nome reale del reparto MAI placeholder; 'aerazione' non 'aereazione'. Misura: \""+testo+"\". Rispondi con SOLO la misura riscritta, senza numerazione, senza simboli #.";
+      const txt=await callAI(prompt,200);
+      const pulito=txt.replace(/^#+\s*/,"").replace(/^\d+\.?\s*/,"").replace(/\*\*/g,"").trim();
+      updMisura(mId,pulito);
+    }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setErr(ex.message.slice(0,60)); }
+    finally{ setLoadM(null); }
+  };
 
   return (
     <div>
@@ -287,6 +300,12 @@ const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
             placeholder="Descrivi la misura correttiva..." rows={2}
             style={{flex:1,padding:"8px 10px",fontSize:13,borderRadius:7,border:`1px solid ${T.border}`,
               outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+          <button onClick={()=>migliora(m.id,m.testo)} disabled={loadM===m.id||!m.testo.trim()} title="Migliora con IA"
+            style={{padding:"7px",borderRadius:7,border:"none",background:T.purple,
+              cursor:loadM===m.id||!m.testo.trim()?"not-allowed":"pointer",flexShrink:0,display:"flex",
+              opacity:loadM===m.id||!m.testo.trim()?0.4:1}}>
+            {loadM===m.id?<Loader2 size={14} style={{color:"#fff",animation:"spin 1s linear infinite"}}/>:<Sparkles size={14} style={{color:"#fff"}}/>}
+          </button>
           <button onClick={()=>delMisura(m.id)} title="Elimina misura"
             style={{padding:"7px",borderRadius:7,border:`1px solid #FECACA`,background:"#FEF2F2",
               cursor:"pointer",flexShrink:0,display:"flex"}}>
@@ -365,8 +384,11 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
       {open&&(
         <div style={{background:"#fff",padding:"12px 14px"}}>
           <Fld label="Titolo criticità">
-            <Inp value={c.titolo} onChange={v=>updC(rId,c.id,"titolo",v)}
-              placeholder="Es. Quadro elettrico privo di segregazione"/>
+            <AIField value={c.titolo} onChange={v=>updC(rId,c.id,"titolo",v)}
+              placeholder="Es. cavi a terra vicino scrivanie" rows={1}
+              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Genera un titolo per una criticità di sicurezza nel reparto "${repNome||"reparto"}". Il titolo deve essere SINTETICO, TECNICO, in MAIUSCOLO, breve (massimo 8 parole), serve solo a identificare la criticità. NON una frase discorsiva. Esempio: "GESTIONE NON ADEGUATA DEI CAVI ELETTRICI". Rispondi con SOLO il titolo in maiuscolo, niente altro, niente simboli #.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Trasforma questo testo in un titolo SINTETICO, TECNICO, in MAIUSCOLO, breve (max 8 parole), che identifichi la criticità. NON una frase discorsiva. Esempio: input "cavi a terra vicino scrivanie" -> output "GESTIONE NON ADEGUATA DEI CAVI ELETTRICI PRESSO LE POSTAZIONI DI LAVORO". Testo: "${v}". Rispondi con SOLO il titolo in maiuscolo, niente altro, niente simboli #.`}
+              onNoKey={()=>setIA(true)}/>
           </Fld>
 
           <Fld label="Descrizione tecnica">
@@ -381,23 +403,23 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
             <MisureEditor rId={rId} c={c} repNome={repNome} updC={updC} setIA={setIA}/>
           </div>
 
-          <Fld label="Rilievo reiterato">
+          <Fld label="Rilievo reiterato (per il verbale)">
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <button onClick={()=>updC(rId,c.id,"reiterata",false)}
-                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
                   border:`1px solid ${!c.reiterata?T.accent:T.border}`,
                   background:!c.reiterata?"#FEF2F2":"#fff",color:!c.reiterata?T.accent:T.muted}}>
-                No, nuova
+                Nuova
               </button>
               <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","reiterata");}}
-                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
                   border:`1px solid ${c.reiterata&&c.tipoReit!=="parziale"?"#F59E0B":T.border}`,
                   background:c.reiterata&&c.tipoReit!=="parziale"?"#FFFBEB":"#fff",
                   color:c.reiterata&&c.tipoReit!=="parziale"?"#92400E":T.muted}}>
                 ⟳ Reiterata
               </button>
               <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","parziale");}}
-                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
                   border:`1px solid ${c.reiterata&&c.tipoReit==="parziale"?"#F59E0B":T.border}`,
                   background:c.reiterata&&c.tipoReit==="parziale"?"#FFFBEB":"#fff",
                   color:c.reiterata&&c.tipoReit==="parziale"?"#92400E":T.muted}}>
@@ -406,10 +428,6 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
             </div>
           </Fld>
 
-          <Fld label="Note">
-            <Inp value={c.note||""} onChange={v=>updC(rId,c.id,"note",v)}
-              placeholder="Annotazioni aggiuntive..." rows={2}/>
-          </Fld>
 
           <Fld label={`Foto (${(c.foto||[]).length})`}>
             <FotoBox compact foto={c.foto||[]}
@@ -945,8 +963,11 @@ export default function App() {
           <Inp value={sopr.tecnico} onChange={v=>setSopr(s=>({...s,tecnico:v}))} placeholder="Nome e cognome"/>
         </Fld>
         <Fld label="Note generali">
-          <Inp value={sopr.note} onChange={v=>setSopr(s=>({...s,note:v}))}
-            placeholder="Condizioni generali, presenti al sopralluogo..." rows={2}/>
+          <AIField value={sopr.note} onChange={v=>setSopr(s=>({...s,note:v}))}
+            placeholder="Condizioni generali, presenti al sopralluogo..." rows={2}
+            promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Scrivi una breve nota generale per il verbale di sopralluogo presso "${sopr.azienda||"l'azienda"}". Molto semplice, formale, max 2 frasi. NON citare leggi. Rispondi con SOLO il testo, senza titoli, senza simboli #.`}
+            promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Rielabora questo testo in modo molto semplice, formale e chiaro, SENZA aggiungere contenuti nuovi, SENZA inserire norme, SENZA allungarlo. Mantieni il significato originale. Testo: "${v}". Rispondi con SOLO il testo rielaborato, senza titoli, senza simboli #.`}
+            onNoKey={()=>setIA(true)}/>
         </Fld>
       </Card>
 
@@ -1004,7 +1025,7 @@ export default function App() {
           addFoto={addFoto} delFoto={delFoto} commFoto={commFoto}
           delR={delR} setIA={setIA}
           onScrollTop={()=>{ const el=document.getElementById("reparto-"+r.id); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}
-          onAddReparto={()=>{ setSopr(s=>({...s,reparti:[...s.reparti,mkReparto()]})); setTimeout(()=>{ const all=document.querySelectorAll("[data-reparto]"); if(all.length) all[all.length-1].scrollIntoView({behavior:"smooth",block:"start"}); },200); }}/>
+          onAddReparto={()=>{ const nuovo=mkReparto(); setSopr(s=>({...s,reparti:[...s.reparti,nuovo]})); setTimeout(()=>{ const el=document.getElementById("reparto-"+nuovo.id); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },250); }}/>
       ))}
 
       {sopr.reparti.length>0&&(
