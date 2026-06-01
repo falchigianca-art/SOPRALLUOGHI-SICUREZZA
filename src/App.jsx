@@ -49,6 +49,7 @@ const compressFoto = (file) => new Promise((res, rej) => {
   reader.readAsDataURL(file);
 });
 const oggi   = () => new Date().toISOString().split("T")[0];
+const dataIT = (d) => { if(!d) return ""; const [y,m,g]=d.split("-"); const mesi=["","gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"]; return `${parseInt(g)} ${mesi[parseInt(m)]} ${y}`; };
 const DB_KEY = "ichno_sopr_v9";
 const AK     = "ichno_ak";
 const akGet  = () => localStorage.getItem(AK)||"";
@@ -308,16 +309,17 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
           <Fld label="Descrizione tecnica">
             <AIField value={c.descr} onChange={v=>updC(rId,c.id,"descr",v)}
               placeholder="Descrizione tecnica della criticità rilevata..." rows={3}
-              promptEmpty={`Sei il redattore dei verbali di sopralluogo di Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per questa criticità: "${c.titolo||"criticità"}" (livello: ${c.livello}). REGOLE ASSOLUTE: 1) Max 3 frasi brevi e dirette. 2) Inizia con una di queste formule variando: "È stata riscontrata", "È stato rilevato", "Si è riscontrata la presenza di", "È stata rilevata", "È emersa", "Si rileva". 3) Descrivi SOLO cosa c'è fisicamente, dove si trova, perché è pericoloso. 4) NON citare mai leggi o articoli. 5) NON usare mai "Durante il sopralluogo è stato riscontrato" come formula fissa. 6) Stile asciutto, niente frasi lunghe. Rispondi SOLO con la descrizione, nient'altro.`}
-              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione rispettando: frasi brevi e dirette, terza persona, NON citare leggi, NON usare "Durante il sopralluogo è stato riscontrato" come apertura fissa, max 3 frasi. Testo: "${v}". Rispondi SOLO con la descrizione riscritta.`}
+              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per: "${c.titolo||"criticità"}" (livello ${c.livello}). REGOLE: max 3 frasi brevi, terza persona, inizia con formula variata (Es stata riscontrata / E stato rilevato / Si e riscontrata la presenza di / E stata rilevata / Si rileva), descrivi cosa c e fisicamente e perche e pericoloso, NON citare leggi, NO frasi generiche. IMPORTANTE: rispondi con SOLO il testo della descrizione, senza titoli, senza simboli #, senza intestazioni, senza markdown.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione: frasi brevi, terza persona, NON citare leggi, max 3 frasi. Testo: "${v}". Rispondi con SOLO la descrizione riscritta, senza titoli, senza simboli #, senza markdown.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
           <Fld label="Misura preventiva / correttiva">
             <AIField value={c.misure} onChange={v=>updC(rId,c.id,"misure",v)}
               placeholder="Misure correttive da adottare..." rows={3}
-              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Per questa criticità: "${c.descr||c.titolo||"criticità"}", scrivi le misure correttive. FORMATO OBBLIGATORIO ESATTO: ogni riga inizia con "1." "2." "3." ecc. Ogni misura: verbo concreto + azione specifica. Esempi di apertura: "Provvedere a...", "Installare...", "Verificare...", "Sostituire...", "Apporre...", "Garantire...", "Disporre...", "Rimuovere...", "Effettuare...". Max 4 misure. Frasi brevi. NON citare leggi. NON usare formule generiche. Rispondi SOLO con l'elenco numerato.`}
-              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi queste misure: ogni punto numerato, verbo concreto, frasi brevi, NON citare leggi. Misure: "${v}". Rispondi SOLO con l'elenco numerato migliorato.`}
+              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Per questa criticita: "${c.descr||c.titolo||"criticita"}", scrivi le misure correttive. FORMATO ESATTO: righe numerate 1. 2. 3. ogni riga inizia con verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare). Max 4 misure. Frasi brevi. NON citare leggi. IMPORTANTE: rispondi con SOLO le righe numerate, senza titoli, senza intestazioni, senza simboli #, senza markdown. Esempio formato corretto: 1. Installare idonea segnaletica di sicurezza.
+2. Verificare periodicamente lo stato dell apparecchiatura.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi queste misure: righe numerate 1. 2. 3., verbo concreto, frasi brevi, NON citare leggi. Misure: "${v}". Rispondi con SOLO le righe numerate, niente titoli, niente simboli #.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
@@ -430,168 +432,149 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
 
 // ── GENERA HTML VERBALE ───────────────────────────────────────
 const generaHTML = (s) => {
-  const tutteCrit=s.reparti.flatMap(r=>r.criticita.map(c=>({...c,rep:r.nome})));
-  const aperte=tutteCrit.filter(c=>c.stato==="Aperta");
+  const aperte=s.reparti.flatMap(r=>r.criticita.filter(c=>c.stato==="Aperta").map(c=>({...c,rep:r.nome})));
   const nEl=aperte.filter(c=>c.livello==="ELEVATA").length;
   const nMe=aperte.filter(c=>c.livello==="MEDIA").length;
   const nLi=aperte.filter(c=>c.livello==="LIEVE").length;
   const reit=aperte.filter(c=>c.reiterata);
-
   const dotLiv=(l)=>l==="ELEVATA"?"#DC2626":l==="MEDIA"?"#D97706":"#16A34A";
   const bgLiv=(l)=>l==="ELEVATA"?"#FEF2F2":l==="MEDIA"?"#FFFBEB":"#F0FDF4";
   const brdLiv=(l)=>l==="ELEVATA"?"#FECACA":l==="MEDIA"?"#FDE68A":"#BBF7D0";
   const txLiv=(l)=>l==="ELEVATA"?"#991B1B":l==="MEDIA"?"#92400E":"#14532D";
+  const emLiv=(l)=>l==="ELEVATA"?"🔴":"l==="MEDIA"?"🟠":"🟢";
+  const dataExt=dataIT(s.data);
+
+  // Pulizia testo da markdown
+  const clean=(t)=>(t||"").replace(/^#+\s*/gm,"").replace(/\*\*/g,"").replace(/\*/g,"").trim();
+
+  // Formatta misure come elenco
+  const formatMisure=(t)=>{
+    if(!t) return "";
+    const righe=clean(t).split("\n").filter(r=>r.trim());
+    return `<p style="font-weight:700;margin:10px 0 6px">Si dispone pertanto quanto segue:</p>`+
+      righe.map(r=>{
+        const m=r.match(/^(\d+\.?)\s*(.*)/);
+        return m?`<p style="margin:3px 0"><strong>${m[1]}</strong> ${m[2]}</p>`:`<p style="margin:3px 0">${r}</p>`;
+      }).join("");
+  };
 
   return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<title>Verbale di Sopralluogo — ${s.azienda||"N/D"} — ${s.data}</title>
+<title>Relazione di Sopralluogo — ${s.azienda||"N/D"} — ${dataExt}</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Georgia,serif;max-width:850px;margin:0 auto;padding:40px 32px;color:#1A1614;line-height:1.75;font-size:14px}
-.logo{font-size:10px;color:#7A736B;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
-h1{color:#C0392B;border-bottom:2px solid #C0392B;padding-bottom:10px;margin-bottom:28px;font-size:22px}
-h2{color:#1A1614;border-left:4px solid #C0392B;padding-left:12px;margin:32px 0 16px;font-size:16px}
-h3{font-size:14px;color:#44403C;margin:18px 0 10px}
-.meta{background:#F7F4EF;border-radius:8px;padding:18px;margin-bottom:28px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.mr{display:flex;gap:10px}
-.ml{font-size:11px;color:#7A736B;min-width:130px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.4px}
-.mv{font-size:13px;font-weight:700}
-.riepilogo-box{background:#F7F4EF;border-radius:8px;padding:16px;margin-bottom:28px;display:flex;gap:24px;flex-wrap:wrap}
-.riepilogo-item{display:flex;align-items:center;gap:8px}
-.dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
-.riepilogo-num{font-size:22px;font-weight:700}
-.riepilogo-lbl{font-size:11px;color:#7A736B;text-transform:uppercase}
-.reparto-box{margin-bottom:28px}
-.reparto-head{background:#C0392B;color:#fff;padding:10px 16px;border-radius:8px 8px 0 0;font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
-.reparto-body{border:1px solid #E2DDD6;border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
-.crit-box{padding:16px;border-bottom:1px solid #E2DDD6;page-break-inside:avoid}
-.crit-box:last-child{border-bottom:none}
-.crit-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.crit-title{font-weight:700;font-size:14px}
-.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700}
-.reit-banner{background:#FFFBEB;border-left:4px solid #F59E0B;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400E;font-style:italic}
-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:12px}
-th{background:#1A1614;color:#fff;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
-td{padding:8px 12px;border-bottom:1px solid #E2DDD6;vertical-align:top}
-tr:nth-child(even) td{background:#F7F4EF}
-.foto-grid{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
-.foto-item img{width:160px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #E2DDD6}
-.foto-item p{font-size:10px;color:#7A736B;margin:4px 0 0;text-align:center;max-width:160px}
-.firma{display:flex;justify-content:space-between;margin-top:60px;gap:40px}
-.fb{flex:1;border-top:1px solid #1A1614;padding-top:14px;font-size:12px}
-.disclaimer{margin-top:40px;padding:14px 16px;background:#FFFBEB;border-radius:8px;font-size:11px;color:#7A736B;border:1px solid #FDE68A}
-@media print{body{padding:20px}.reparto-box,.crit-box{page-break-inside:avoid}}
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;max-width:870px;margin:0 auto;padding:30px 28px;color:#1A1614;line-height:1.6;font-size:13px}
+.intestazione{text-align:right;font-size:11px;color:#7A736B;margin-bottom:20px;border-bottom:1px solid #ddd;padding-bottom:10px}
+.intestazione strong{font-size:13px;color:#C0392B;display:block;margin-bottom:4px}
+.destinatario{margin-bottom:20px}
+.oggetto{font-weight:700;margin-bottom:20px;font-size:13px}
+h2{font-size:14px;font-weight:700;margin:20px 0 8px;color:#1A1614}
+.premessa{margin-bottom:16px;font-size:13px}
+.attesta{background:#F7F4EF;border:1px solid #E2DDD6;padding:12px 16px;margin-bottom:16px;font-size:12px;font-style:italic}
+.legenda{display:flex;gap:20px;margin-bottom:20px;flex-wrap:wrap}
+.legenda-item{display:flex;align-items:center;gap:6px;font-size:12px}
+.leg-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+table.reparto{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px}
+table.reparto th{background:#C0392B;color:#fff;padding:8px 12px;text-align:left;font-weight:700;font-size:13px}
+table.reparto td{padding:10px 12px;border:1px solid #ddd;vertical-align:top}
+table.reparto td.foto-col{width:220px;min-width:180px}
+table.reparto td.crit-col{width:auto}
+.foto-grid-rep{display:flex;flex-wrap:wrap;gap:6px}
+.foto-grid-rep img{width:95px;height:70px;object-fit:cover;border-radius:4px;border:1px solid #ddd}
+.foto-cap{font-size:9px;color:#7A736B;text-align:center;margin:2px 0 0}
+.lv-badge{font-weight:700;font-size:12px;margin-bottom:6px}
+.reit-banner{background:#FFFBEB;border-left:3px solid #F59E0B;padding:5px 10px;margin:6px 0 8px;font-size:12px;font-style:italic;color:#92400E}
+.crit-title{font-weight:700;font-size:13px;text-transform:uppercase;margin-bottom:6px}
+table.riepilogo{width:100%;border-collapse:collapse;margin:14px 0;font-size:12px}
+table.riepilogo th{background:#1A1614;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase}
+table.riepilogo td{padding:7px 10px;border-bottom:1px solid #ddd;vertical-align:top}
+table.riepilogo tr:nth-child(even) td{background:#F7F4EF}
+.ricorda{margin-top:16px;font-size:13px}
+.firma{display:flex;justify-content:space-between;margin-top:50px;gap:40px}
+.fb{flex:1;border-top:1px solid #1A1614;padding-top:12px;font-size:12px}
+.note-finali{margin-top:30px;font-size:11px;color:#7A736B;border-top:1px solid #ddd;padding-top:10px}
+@media print{body{padding:16px}table.reparto{page-break-inside:avoid}}
 </style></head><body>
 
-<p class="logo">Ichnossicurezza S.r.l. — Consulenza in materia di Salute e Sicurezza sul Lavoro</p>
-
-<h1>Verbale di Sopralluogo<br>
-<small style="font-size:15px;font-weight:normal;color:#44403C">${s.azienda||"N/D"} — ${s.data}</small></h1>
-
-<div class="meta">
-  <div class="mr"><span class="ml">Azienda / Ente</span><span class="mv">${s.azienda||"—"}</span></div>
-  <div class="mr"><span class="ml">Indirizzo</span><span class="mv">${s.indirizzo||"—"}</span></div>
-  <div class="mr"><span class="ml">Data sopralluogo</span><span class="mv">${s.data}</span></div>
-  <div class="mr"><span class="ml">Tipo</span><span class="mv">${s.tipo}</span></div>
-  <div class="mr"><span class="ml">Tecnico incaricato</span><span class="mv">${s.tecnico||"—"}</span></div>
-  <div class="mr"><span class="ml">Reparti visitati</span><span class="mv">${s.reparti.length}</span></div>
+<div class="intestazione">
+  <strong>ICHNOSSICUREZZA S.R.L.</strong>
+  Predda Niedda Str. 18 Bis — 07100 Sassari (SS) — P.IVA 02754010905<br>
+  info@ichnossicurezza.it | ichnossicurezza@pec.it | www.ichnossicurezza.it | Tel 079/4136984
 </div>
 
-<h2>Riepilogo criticità rilevate</h2>
-<div class="riepilogo-box">
-  <div class="riepilogo-item">
-    <span class="dot" style="background:#DC2626"></span>
-    <div><div class="riepilogo-num" style="color:#DC2626">${nEl}</div><div class="riepilogo-lbl">Elevate</div></div>
-  </div>
-  <div class="riepilogo-item">
-    <span class="dot" style="background:#D97706"></span>
-    <div><div class="riepilogo-num" style="color:#D97706">${nMe}</div><div class="riepilogo-lbl">Medie</div></div>
-  </div>
-  <div class="riepilogo-item">
-    <span class="dot" style="background:#16A34A"></span>
-    <div><div class="riepilogo-num" style="color:#16A34A">${nLi}</div><div class="riepilogo-lbl">Lievi</div></div>
-  </div>
-  <div class="riepilogo-item">
-    <span class="dot" style="background:#D97706"></span>
-    <div><div class="riepilogo-num" style="color:#D97706">${reit.length}</div><div class="riepilogo-lbl">Reiterate</div></div>
-  </div>
-  <div class="riepilogo-item">
-    <span class="dot" style="background:#1A1614"></span>
-    <div><div class="riepilogo-num">${aperte.length}</div><div class="riepilogo-lbl">Totale</div></div>
-  </div>
+<div class="destinatario">
+  <strong>Spett.le</strong><br>
+  <strong>${s.azienda||"N/D"}</strong><br>
+  ${s.indirizzo||""}
 </div>
 
-<h2>Dettaglio per reparto</h2>
+<p class="oggetto">Oggetto: Relazione sopralluogo ${s.tecnico?"del "+s.tecnico+" ":""} del ${dataExt}${s.tipo&&s.tipo!=="Periodico"?" – "+s.tipo:""}.</p>
+
+<h2>PREMESSA</h2>
+<div class="premessa">
+La seguente relazione viene redatta da <strong>${s.tecnico||"Dott. Giancarlo Falchi"}</strong>, tecnico incaricato della Ichnossicurezza S.r.l.<br><br>
+Il sottoscritto, al fine di verificare l'applicazione delle disposizioni in materia di igiene e sicurezza del lavoro, ha eseguito gli opportuni accertamenti e, dopo aver effettuato un sopralluogo, ha redatto il seguente documento.<br><br>
+La stima delle criticità riscontrate è stata eseguita nel modo più obiettivo possibile, con classificazione mediante sistema semaforico (Rosso – Elevato, Arancione – Medio, Verde – Lieve).
+</div>
+
+<div class="attesta">
+ATTESTA SOTTO LA PROPRIA PERSONALE RESPONSABILITÀ quanto segue:<br><br>
+L'anno ${(s.data||"").split("-")[0]} addì ${dataExt} il sottoscritto <strong>${s.tecnico||"Dott. Giancarlo Falchi"}</strong>, ha effettuato una visita nei luoghi di lavoro di pertinenza al fine di verificare lo stato di fatto di alcuni aspetti impiantistici, edilizi, igienico-sanitari degli ambienti in esame, oltre che l'applicazione delle disposizioni in materia di igiene e sicurezza del lavoro. La verifica è stata eseguita attraverso la presa visione diretta delle strutture e dei vari ambienti.
+</div>
+
+<p style="text-align:right;font-size:12px;color:#7A736B;margin-bottom:16px">Sassari, ${dataExt}</p>
+
+<h2>LEGENDA LIVELLI DI CRITICITÀ</h2>
+<div class="legenda">
+  <div class="legenda-item"><span class="leg-dot" style="background:#DC2626"></span><div><strong>🔴 ROSSO – ELEVATO</strong><br><span style="font-size:11px;color:#7A736B">Intervento urgente e inderogabile</span></div></div>
+  <div class="legenda-item"><span class="leg-dot" style="background:#D97706"></span><div><strong>🟠 ARANCIONE – MEDIO</strong><br><span style="font-size:11px;color:#7A736B">Intervento da pianificare a breve termine</span></div></div>
+  <div class="legenda-item"><span class="leg-dot" style="background:#16A34A"></span><div><strong>🟢 VERDE – LIEVE</strong><br><span style="font-size:11px;color:#7A736B">Intervento di miglioramento</span></div></div>
+</div>
+
 ${s.reparti.map((r,ri)=>{
-  const cAp=r.criticita.filter(c=>c.stato==="Aperta");
-  return `<div class="reparto-box">
-  <div class="reparto-head">
-    <span style="opacity:0.7">${ri+1}.</span> ${r.nome||"Reparto"}
-  </div>
-  <div class="reparto-body">
-    ${cAp.length===0?`<div style="padding:14px;color:#7A736B;font-style:italic">Nessuna criticità aperta.</div>`
-    :cAp.map((c,ci)=>`<div class="crit-box" style="background:${bgLiv(c.livello)}">
-      <div class="crit-head">
-        <span class="dot" style="background:${dotLiv(c.livello)}"></span>
-        <div class="crit-title">${ci+1}. ${c.titolo||"Criticità"}</div>
-        <span class="badge" style="background:${bgLiv(c.livello)};color:${txLiv(c.livello)};border:1px solid ${brdLiv(c.livello)}">${c.livello}</span>
-        ${c.reiterata?`<span class="badge" style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A">⟳ REITERATA</span>`:""}
+  const critAp=r.criticita.filter(c=>c.stato==="Aperta");
+  if(!critAp.length&&!(r.foto||[]).length) return "";
+  return `
+<table class="reparto">
+  <tr><th colspan="2">Reparto: ${r.nome||"Reparto "+(ri+1)}</th></tr>
+  ${critAp.map(c=>`<tr>
+    <td class="foto-col">
+      ${(c.foto||[]).length?`<div class="foto-grid-rep">${(c.foto||[]).map(f=>`<div><img src="${f.data}"/><p class="foto-cap">${f.comm||""}</p></div>`).join("")}</div>`:"<p style='font-size:11px;color:#aaa;font-style:italic'>Nessuna foto</p>"}
+    </td>
+    <td class="crit-col">
+      <div class="lv-badge" style="color:${txLiv(c.livello)}">
+        ${c.livello==="ELEVATA"?"🔴":"c.livello==="MEDIA"?"🟠":"🟢"} CRITICITÀ ${c.livello}
       </div>
-      ${c.reiterata?`<div class="reit-banner"><em>⚠ RILIEVO REITERATO – Criticità già segnalata nella Relazione di Sopralluogo precedente e non risolta.</em></div>`:""}
-      ${c.descr?`<p style="margin-bottom:10px"><strong>Descrizione:</strong> ${c.descr}</p>`:""}
-      ${c.misure?`<p style="margin-bottom:10px"><strong>Misura correttiva:</strong> ${c.misure}</p>`:""}
-      ${c.note?`<p style="margin-bottom:0;font-style:italic;font-size:12px;color:#7A736B">Nota: ${c.note}</p>`:""}
-      ${(c.foto||[]).length?`<div style="margin-top:10px"><strong style="font-size:12px">Foto:</strong>
-      <div class="foto-grid">${(c.foto||[]).map(f=>`<div class="foto-item"><img src="${f.data}"/><p>${f.comm||f.nome}</p></div>`).join("")}</div></div>`:""}
-    </div>`).join("")}
-    ${(r.foto||[]).length?`<div style="padding:14px;border-top:1px solid #E2DDD6">
-    <strong style="font-size:12px">Documentazione fotografica</strong>
-    <div class="foto-grid">${r.foto.map(f=>`<div class="foto-item"><img src="${f.data}"/><p>${f.comm||f.nome}</p></div>`).join("")}</div>
-    </div>`:""}
-  </div>
-</div>`;}).join("")}
+      ${c.reiterata?`<div class="reit-banner">⚠ RILIEVO REITERATO – Criticità già segnalata nella Relazione di Sopralluogo precedente e non risolta.</div>`:""}
+      <div class="crit-title">${c.titolo||"Criticità"}</div>
+      ${clean(c.descr)?`<p style="margin-bottom:10px">${clean(c.descr)}</p>`:""}
+      ${formatMisure(c.misure)}
+      ${clean(c.note)?`<p style="margin-top:8px;font-style:italic;font-size:12px;color:#7A736B">${clean(c.note)}</p>`:""}
+    </td>
+  </tr>`).join("")}
+  ${(r.foto||[]).filter(f=>!r.criticita.some(c=>(c.foto||[]).some(cf=>cf.id===f.id))).length?
+    `<tr><td colspan="2"><div style="padding:8px 0"><strong style="font-size:12px">Documentazione fotografica reparto</strong><div class="foto-grid-rep" style="margin-top:6px">${(r.foto||[]).map(f=>`<div><img src="${f.data}"/><p class="foto-cap">${f.comm||""}</p></div>`).join("")}</div></div></td></tr>`
+  :""}
+</table>`;}).join("")}
 
-<h2>Tabella riepilogativa</h2>
-${aperte.length===0?`<p>Nessuna criticità aperta.</p>`:`
-<table>
-<tr><th>#</th><th>Reparto</th><th>Criticità</th><th>Livello</th><th>Misura correttiva</th><th>Stato</th></tr>
-${aperte.map((c,i)=>`<tr>
-  <td>${i+1}</td>
-  <td>${c.rep}</td>
-  <td>${c.titolo||"—"}</td>
-  <td><span style="color:${txLiv(c.livello)};font-weight:700">● ${c.livello}</span></td>
-  <td>${c.misure?c.misure.slice(0,70)+(c.misure.length>70?"…":""):"—"}</td>
-  <td>${c.reiterata?"⟳ Reiterata":"Nuova"}</td>
-</tr>`).join("")}
-</table>`}
+<h2>RIEPILOGO CRITICITÀ RILEVATE</h2>
+<table class="riepilogo">
+<tr><th>N°</th><th>Criticità</th><th>Livello</th><th>Note</th></tr>
+${aperte.map((c,i)=>`<tr><td>${i+1}</td><td>${c.rep} — ${c.titolo||"—"}</td><td style="color:${txLiv(c.livello)};font-weight:700">${c.livello==="ELEVATA"?"🔴":"c.livello==="MEDIA"?"🟠":"🟢"} ${c.livello}</td><td>${c.reiterata?"<em>REITERATO</em>":"—"}</td></tr>`).join("")}
+</table>
 
-${reit.length?`<h2>Criticità reiterate (${reit.length})</h2>
-<p style="margin-bottom:14px">Le seguenti criticità erano già presenti nel precedente verbale e non risultano ancora risolte:</p>
-<table>
-<tr><th>#</th><th>Reparto</th><th>Criticità</th><th>Livello</th></tr>
-${reit.map((c,i)=>`<tr><td>${i+1}</td><td>${c.rep}</td><td>${c.titolo||"—"}</td><td style="color:${txLiv(c.livello)};font-weight:700">● ${c.livello}</td></tr>`).join("")}
-</table>`:""}
+${s.note?`<div class="ricorda"><strong>Si ricorda, inoltre:</strong><br>${clean(s.note)}</div>`:""}
 
-${s.note?`<h2>Note generali</h2><p>${s.note}</p>`:""}
-
-<h2>Conclusioni</h2>
-<p>${s.concl||`Il sopralluogo del ${s.data} presso ${s.azienda||"l'azienda"} ha consentito di ispezionare ${s.reparti.length} reparti, rilevando complessivamente ${aperte.length} criticità aperte (${nEl} elevate, ${nMe} medie, ${nLi} lievi)${reit.length?`, di cui ${reit.length} reiterate rispetto al precedente verbale`:""}. Si richiede l'adozione delle misure correttive indicate entro i tempi stabiliti.`}</p>
+<h2>CONCLUSIONI</h2>
+<p>${clean(s.concl)||"Il sopralluogo del "+dataExt+" presso "+( s.azienda||"l'azienda")+" ha consentito di verificare "+s.reparti.length+" reparti, rilevando "+aperte.length+" criticità aperte ("+nEl+" elevate, "+nMe+" medie, "+nLi+" lievi"+(reit.length?", di cui "+reit.length+" reiterate":"")+"). Si richiede l'adozione delle misure correttive indicate entro i tempi stabiliti."}</p>
 
 <div class="firma">
-  <div class="fb">
-    Il Tecnico incaricato<br>
-    <strong>${s.tecnico||"Dott. Giancarlo Falchi"}</strong><br>
-    Consulente in materia di Sicurezza sul Lavoro<br><br>
-    Firma: ________________________
-  </div>
-  <div class="fb">
-    Il Datore di Lavoro<br>
-    Per presa visione e accettazione<br><br><br>
-    Firma: ________________________
-  </div>
+  <div class="fb">Il Tecnico incaricato<br><strong>${s.tecnico||"Dott. Giancarlo Falchi"}</strong><br>Ichnossicurezza S.r.l.<br><br>Firma: ________________________</div>
+  <div class="fb">Il Datore di Lavoro<br>Per presa visione e accettazione<br><br><br>Firma: ________________________</div>
 </div>
 
-<div class="disclaimer">
-  <strong>Nota.</strong> Il presente documento costituisce verbale di sopralluogo periodico in materia di salute e sicurezza sul lavoro ai sensi del D.Lgs. 81/2008 e s.m.i. Non sostituisce la Valutazione dei Rischi (DVR). <strong>Ichnossicurezza S.r.l.</strong> — Via Rockefeller 24, 07100 Sassari (SS) — Tel. 079-4136984 — info@ichnossicurezza.it
+<div class="note-finali">
+  Il presente verbale ha valore di relazione di sopralluogo periodico ai sensi del D.Lgs. 81/2008 e s.m.i. Non sostituisce la Valutazione dei Rischi (DVR).<br>
+  <strong>Ichnossicurezza S.r.l.</strong> — Predda Niedda Str. 18 Bis, 07100 Sassari — Tel. 079/4136984 — info@ichnossicurezza.it
 </div>
 
 </body></html>`;
@@ -693,7 +676,7 @@ export default function App() {
   const generaConcl=async()=>{
     if(!akGet()){setIA(true);return;}
     try{
-      const reitCount = sopr.reparti.reduce((s,r)=>s+r.criticita.filter(c=>c.reiterata&&c.stato==="Aperta").length,0); const t=await callAI(`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Redigi le conclusioni del verbale di sopralluogo effettuato presso "${sopr.azienda||"azienda"}" in data ${sopr.data}. Reparti/aree ispezionati: ${sopr.reparti.map(r=>r.nome).filter(Boolean).join(", ")||"nessuno specificato"}. Criticità rilevate: ${nEl} elevate, ${nMe} medie, ${nLi} lievi, di cui ${reitCount} reiterate. Stile: tecnico-formale, terza persona, come i verbali Ichnossicurezza. Struttura: 1) sintetica descrizione dell'esito del sopralluogo; 2) invito ad adottare le misure correttive indicate; 3) disponibilità del tecnico per chiarimenti. Non citare articoli di legge. 3-4 frasi. Solo il testo delle conclusioni.`);
+      const reitCount = sopr.reparti.reduce((s,r)=>s+r.criticita.filter(c=>c.reiterata&&c.stato==="Aperta").length,0); const t=await callAI("Sei il redattore verbali Ichnossicurezza S.r.l. Conclusioni verbale sopralluogo presso \"" + (sopr.azienda||"azienda") + "\" del " + dataIT(sopr.data) + ". Criticita: " + nEl + " elevate, " + nMe + " medie, " + nLi + " lievi. Stile: tecnico-formale, asciutto, 3 frasi brevi max. NON citare leggi. Rispondi con SOLO il testo, senza titoli, senza simboli #, senza markdown.");
       setSopr(s=>({...s,concl:t}));
     }catch(ex){if(ex.message==="NO_KEY")setIA(true);}
   };
