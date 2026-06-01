@@ -308,16 +308,16 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
           <Fld label="Descrizione tecnica">
             <AIField value={c.descr} onChange={v=>updC(rId,c.id,"descr",v)}
               placeholder="Descrizione tecnica della criticità rilevata..." rows={3}
-              promptEmpty={`Sei un RSPP esperto. Scrivi una descrizione tecnica professionale e sintetica per questa criticità di sicurezza sul lavoro: "${c.titolo||"criticità rilevata"}". Livello: ${c.livello}. Non citare articoli di legge. Non usare "Durante il sopralluogo è stato riscontrato". Max 3 frasi. Solo il testo.`}
-              promptFull={v=>`Sei un RSPP esperto. Migliora questa descrizione tecnica rendendola più professionale e precisa. Non citare leggi. Non usare "Durante il sopralluogo". Testo: "${v}". Solo la descrizione migliorata.`}
+              promptEmpty={`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per questa non conformità rilevata durante un sopralluogo: "${c.titolo||"criticità"}". Livello: ${c.livello==="ELEVATA"?"ELEVATA — intervento urgente e inderogabile":c.livello==="MEDIA"?"MEDIA — intervento da pianificare a breve":"LIEVE — intervento di miglioramento"}". Stile: oggettivo, tecnico-formale, terza persona. Descrivi cosa è stato rilevato, dove, in che condizioni e perché costituisce un rischio. Usa frasi come "È stata riscontrata", "Si è rilevata la presenza di", "È emersa la necessità di". Varia la formulazione. NON citare articoli di legge nel testo. NON usare "Durante il sopralluogo è stato riscontrato" come frase iniziale fissa. Max 4 frasi. Solo il testo della descrizione.`}
+              promptFull={v=>`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Migliora questa descrizione tecnica rendendola più professionale e precisa, nello stile dei verbali di sopralluogo Ichnossicurezza. Usa frasi oggettive in terza persona come "È stata riscontrata", "Si è rilevata". NON citare leggi. NON iniziare con "Durante il sopralluogo". Testo originale: "${v}". Rispondi solo con la descrizione migliorata.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
           <Fld label="Misura preventiva / correttiva">
             <AIField value={c.misure} onChange={v=>updC(rId,c.id,"misure",v)}
               placeholder="Misure correttive da adottare..." rows={3}
-              promptEmpty={`Sei un RSPP esperto. Per questa criticità: "${c.descr||c.titolo||"criticità"}". Indica le misure correttive tecniche e organizzative. Sii concreto. Non citare leggi. Max 4 misure brevi. Solo il testo.`}
-              promptFull={v=>`Sei un RSPP esperto. Migliora queste misure correttive. Non citare leggi. Misure: "${v}". Solo le misure migliorate.`}
+              promptEmpty={`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Per questa non conformità: "${c.descr||c.titolo||"criticità"}" (livello ${c.livello}), redigi le misure correttive nello stile dei verbali Ichnossicurezza. Formato: elenco numerato 1. 2. 3. (max 4 punti). Ogni misura deve essere concreta, specifica e immediatamente applicabile. Inizia ogni punto con un verbo all'infinito o imperativo (es. "Provvedere a...", "Installare...", "Verificare...", "Sostituire...", "Predisporre..."). NON citare articoli di legge. NON usare formule generiche. Solo l'elenco numerato delle misure.`}
+              promptFull={v=>`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Migliora queste misure correttive rendendole più specifiche e tecniche, nello stile dei verbali Ichnossicurezza (elenco numerato, verbi concreti, nessun riferimento normativo esplicito). Misure originali: "${v}". Solo le misure migliorate in formato elenco numerato.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
@@ -651,7 +651,7 @@ export default function App() {
       setSopr(s=>({...s,vecchioVerbale:testo.slice(0,3000)}));
       const critAttuale=sopr?.reparti.flatMap(r=>r.criticita.map(c=>c.titolo||c.descr)).filter(Boolean).join("\n");
       if(critAttuale&&akGet()){
-        const prompt="Sei un RSPP. Confronta queste criticita del NUOVO sopralluogo con il VECCHIO verbale. Per ogni criticita indica se e REITERATA o NUOVA. Rispondi SOLO con JSON array: [{\"titolo\":\"...\",\"reiterata\":true}]. Vecchio verbale: "+testo.slice(0,1500)+" --- Nuove criticita: "+critAttuale;
+        const prompt="Sei un tecnico RSPP di Ichnossicurezza S.r.l. Analizza il VECCHIO verbale di sopralluogo e confrontalo con le criticita del NUOVO sopralluogo. Una criticita e REITERATA se descrive lo stesso problema nella stessa area, anche formulato diversamente. Rispondi SOLO con JSON array: [{\"titolo\":\"...\",\"reiterata\":true}]. VECCHIO verbale: "+testo.slice(0,1500)+" --- NUOVE criticita: "+critAttuale;
         const risp=await callAI(prompt,800);
         try{
           const arr=JSON.parse(risp.replace(/```json|```/g,"").trim());
@@ -693,7 +693,7 @@ export default function App() {
   const generaConcl=async()=>{
     if(!akGet()){setIA(true);return;}
     try{
-      const t=await callAI(`Sei un RSPP. Conclusioni per verbale sopralluogo presso "${sopr.azienda||"azienda"}" del ${sopr.data}. Reparti: ${sopr.reparti.map(r=>r.nome).filter(Boolean).join(", ")||"nessuno"}. Criticità: ${nEl} elevate, ${nMe} medie, ${nLi} lievi. 2-3 frasi professionali. Non citare leggi. Solo testo.`);
+      const reitCount = sopr.reparti.reduce((s,r)=>s+r.criticita.filter(c=>c.reiterata&&c.stato==="Aperta").length,0); const t=await callAI(`Sei un tecnico RSPP di Ichnossicurezza S.r.l. Redigi le conclusioni del verbale di sopralluogo effettuato presso "${sopr.azienda||"azienda"}" in data ${sopr.data}. Reparti/aree ispezionati: ${sopr.reparti.map(r=>r.nome).filter(Boolean).join(", ")||"nessuno specificato"}. Criticità rilevate: ${nEl} elevate, ${nMe} medie, ${nLi} lievi, di cui ${reitCount} reiterate. Stile: tecnico-formale, terza persona, come i verbali Ichnossicurezza. Struttura: 1) sintetica descrizione dell'esito del sopralluogo; 2) invito ad adottare le misure correttive indicate; 3) disponibilità del tecnico per chiarimenti. Non citare articoli di legge. 3-4 frasi. Solo il testo delle conclusioni.`);
       setSopr(s=>({...s,concl:t}));
     }catch(ex){if(ex.message==="NO_KEY")setIA(true);}
   };
