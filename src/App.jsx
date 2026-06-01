@@ -24,6 +24,30 @@ const LIVELLI = ["ELEVATA","MEDIA","LIEVE"];
 const TIPI    = ["Periodico","Straordinario","Primo sopralluogo","Follow-up","Audit","Pre-appalto (DUVRI)"];
 
 const uid    = () => Math.random().toString(36).slice(2,9);
+
+// Compressione foto: riduce a max 1200px e qualità 0.75 — buona qualità, 5-8x meno spazio
+const compressFoto = (file) => new Promise((res, rej) => {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 1200;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      res({ id:uid(), data:canvas.toDataURL("image/jpeg", 0.75), nome:file.name, comm:"" });
+    };
+    img.onerror = rej;
+    img.src = ev.target.result;
+  };
+  reader.onerror = rej;
+  reader.readAsDataURL(file);
+});
 const oggi   = () => new Date().toISOString().split("T")[0];
 const DB_KEY = "ichno_sopr_v9";
 const AK     = "ichno_ak";
@@ -34,7 +58,7 @@ const dbSave = (l) => { try { localStorage.setItem(DB_KEY,JSON.stringify(l)); } 
 
 const mkSopr   = () => ({ id:uid(), azienda:"", indirizzo:"", data:oggi(), tecnico:"", tipo:"Periodico", note:"", reparti:[], concl:"", vecchioVerbale:"", creato:new Date().toISOString() });
 const mkReparto= () => ({ id:uid(), nome:"", foto:[], criticita:[] });
-const mkCrit   = () => ({ id:uid(), titolo:"", descr:"", misure:"", livello:"ELEVATA", stato:"Aperta", reiterata:false, note:"" });
+const mkCrit   = () => ({ id:uid(), titolo:"", descr:"", misure:"", livello:"ELEVATA", stato:"Aperta", reiterata:false, note:"", foto:[] });
 
 const livC = (l) => T[l?.toLowerCase()] || T.lieve;
 
@@ -166,18 +190,21 @@ const ModalIA = ({onClose}) => {
 };
 
 // ── FOTO ─────────────────────────────────────────────────────
-const FotoBox = ({foto,onAdd,onDel,onComm}) => {
+const FotoBox = ({foto,onAdd,onDel,onComm,compact=false}) => {
   const idC=useState(()=>"fc"+uid())[0];
   const idG=useState(()=>"fg"+uid())[0];
   const onFile=async(e)=>{
     for(const f of Array.from(e.target.files||[])){
       if(!f.type.startsWith("image/")) continue;
-      await new Promise(res=>{const r=new FileReader();r.onload=ev=>{onAdd({id:uid(),data:ev.target.result,nome:f.name,comm:""});res();};r.readAsDataURL(f);});
+      try { const compressed = await compressFoto(f); onAdd(compressed); }
+      catch { /* fallback senza compressione */
+        await new Promise(res=>{const r=new FileReader();r.onload=ev=>{onAdd({id:uid(),data:ev.target.result,nome:f.name,comm:""});res();};r.readAsDataURL(f);});
+      }
     }
     e.target.value="";
   };
   const lb={display:"flex",flexDirection:"column",alignItems:"center",gap:5,
-    padding:"14px 10px",borderRadius:8,border:`2px dashed ${T.border}`,cursor:"pointer",flex:1};
+    padding:compact?"8px 6px":"14px 10px",borderRadius:8,border:`2px dashed ${T.border}`,cursor:"pointer",flex:1};
   return (
     <div>
       <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -298,6 +325,13 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
             <Inp value={c.note||""} onChange={v=>updC(rId,c.id,"note",v)}
               placeholder="Annotazioni aggiuntive..." rows={2}/>
           </Fld>
+
+          <Fld label={`Foto (${(c.foto||[]).length})`}>
+            <FotoBox compact foto={c.foto||[]}
+              onAdd={f=>updC(rId,c.id,"foto",[...(c.foto||[]),f])}
+              onDel={fId=>updC(rId,c.id,"foto",(c.foto||[]).filter(x=>x.id!==fId))}
+              onComm={(fId,comm)=>updC(rId,c.id,"foto",(c.foto||[]).map(x=>x.id!==fId?x:{...x,comm}))}/>
+          </Fld>
         </div>
       )}
     </div>
@@ -305,7 +339,8 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
 };
 
 // ── REPARTO ───────────────────────────────────────────────────
-const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,setIA}) => {
+const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,setIA,onScrollTop,onAddReparto}) => {
+  const topRef = useState(()=>({ current:null }))[0];
   const [tab,setTab]=useState("crit");
   const cAp=r.criticita.filter(c=>c.stato==="Aperta");
   const nEL=cAp.filter(c=>c.livello==="ELEVATA").length;
@@ -315,6 +350,7 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
 
   return (
     <Card>
+      <div id={"reparto-"+r.id} data-reparto="true" ref={el=>topRef.current=el} style={{position:"absolute",top:-60}}/>
       {/* Header reparto */}
       <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,
         display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -359,10 +395,25 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
             {r.criticita.map(c=>(
               <CritCard key={c.id} rId={r.id} c={c} updC={updC} delC={delC} setIA={setIA}/>
             ))}
-            <Btn v="d" sz="s" icon={<Plus size={13}/>}
-              onClick={()=>addC(r.id,mkCrit())} full>
-              Aggiungi criticità
-            </Btn>
+            {/* Pulsanti azione in fondo al reparto */}
+            <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
+              <Btn v="d" sz="s" icon={<Plus size={13}/>}
+                onClick={()=>addC(r.id,mkCrit())} style={{flex:1,justifyContent:"center"}}>
+                Nuova criticità
+              </Btn>
+              <Btn v="s" sz="s" icon={<Plus size={13}/>}
+                onClick={onAddReparto} style={{flex:1,justifyContent:"center"}}>
+                Nuovo reparto
+              </Btn>
+            </div>
+            <button
+              onClick={onScrollTop}
+              style={{width:"100%",marginTop:8,padding:"7px",borderRadius:7,
+                border:`1px solid ${T.border}`,background:T.bg,cursor:"pointer",
+                fontSize:12,fontWeight:600,color:T.muted,display:"flex",
+                alignItems:"center",justifyContent:"center",gap:6}}>
+              ↑ Torna all'inizio del reparto
+            </button>
           </>
         )}
 
@@ -489,6 +540,8 @@ ${s.reparti.map((r,ri)=>{
       ${c.descr?`<p style="margin-bottom:10px"><strong>Descrizione:</strong> ${c.descr}</p>`:""}
       ${c.misure?`<p style="margin-bottom:10px"><strong>Misura correttiva:</strong> ${c.misure}</p>`:""}
       ${c.note?`<p style="margin-bottom:0;font-style:italic;font-size:12px;color:#7A736B">Nota: ${c.note}</p>`:""}
+      ${(c.foto||[]).length?`<div style="margin-top:10px"><strong style="font-size:12px">Foto:</strong>
+      <div class="foto-grid">${(c.foto||[]).map(f=>`<div class="foto-item"><img src="${f.data}"/><p>${f.comm||f.nome}</p></div>`).join("")}</div></div>`:""}
     </div>`).join("")}
     ${(r.foto||[]).length?`<div style="padding:14px;border-top:1px solid #E2DDD6">
     <strong style="font-size:12px">Documentazione fotografica</strong>
@@ -884,7 +937,9 @@ export default function App() {
         <RepartoCard key={r.id} r={r} ri={ri}
           updR={updR} updC={updC} addC={addC} delC={delC}
           addFoto={addFoto} delFoto={delFoto} commFoto={commFoto}
-          delR={delR} setIA={setIA}/>
+          delR={delR} setIA={setIA}
+          onScrollTop={()=>{ const el=document.getElementById("reparto-"+r.id); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}
+          onAddReparto={()=>{ setSopr(s=>({...s,reparti:[...s.reparti,mkReparto()]})); setTimeout(()=>{ const all=document.querySelectorAll("[data-reparto]"); if(all.length) all[all.length-1].scrollIntoView({behavior:"smooth",block:"start"}); },200); }}/>
       ))}
 
       {sopr.reparti.length>0&&(
