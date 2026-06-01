@@ -345,7 +345,12 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
           {c.titolo||"Nuova criticità"}
         </span>
 
-        {c.reiterata&&<Pill color="orange">⟳ Reiterata</Pill>}
+        <button onClick={()=>{ if(!c.reiterata){updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","reiterata");} else if(c.tipoReit!=="parziale"){updC(rId,c.id,"tipoReit","parziale");} else {updC(rId,c.id,"reiterata",false);} }}
+          title="Clicca per cambiare: Nuova / Reiterata / Parzialmente risolta"
+          style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,border:"none",cursor:"pointer",flexShrink:0,
+            background:c.reiterata?"#FFF7ED":"#F5F2ED",color:c.reiterata?"#9A3412":T.muted}}>
+          {c.reiterata?(c.tipoReit==="parziale"?"⟳ Parziale":"⟳ Reiterata"):"Nuova"}
+        </button>
 
         {/* Selettore livello a pill */}
         <div style={{display:"flex",gap:3,flexShrink:0}}>
@@ -399,34 +404,9 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom:4}}>
             <MisureEditor rId={rId} c={c} repNome={repNome} updC={updC} setIA={setIA}/>
           </div>
-
-          <Fld label="Rilievo reiterato (per il verbale)">
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <button onClick={()=>updC(rId,c.id,"reiterata",false)}
-                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
-                  border:`1px solid ${!c.reiterata?T.accent:T.border}`,
-                  background:!c.reiterata?"#FEF2F2":"#fff",color:!c.reiterata?T.accent:T.muted}}>
-                Nuova
-              </button>
-              <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","reiterata");}}
-                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
-                  border:`1px solid ${c.reiterata&&c.tipoReit!=="parziale"?"#F59E0B":T.border}`,
-                  background:c.reiterata&&c.tipoReit!=="parziale"?"#FFFBEB":"#fff",
-                  color:c.reiterata&&c.tipoReit!=="parziale"?"#92400E":T.muted}}>
-                ⟳ Reiterata
-              </button>
-              <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","parziale");}}
-                style={{padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
-                  border:`1px solid ${c.reiterata&&c.tipoReit==="parziale"?"#F59E0B":T.border}`,
-                  background:c.reiterata&&c.tipoReit==="parziale"?"#FFFBEB":"#fff",
-                  color:c.reiterata&&c.tipoReit==="parziale"?"#92400E":T.muted}}>
-                ⟳ Parzialmente risolta
-              </button>
-            </div>
-          </Fld>
 
 
           <Fld label={`Foto (${(c.foto||[]).length})`}>
@@ -1025,7 +1005,7 @@ export default function App() {
           addFoto={addFoto} delFoto={delFoto} commFoto={commFoto}
           delR={delR} setIA={setIA}
           onScrollTop={()=>{ const el=document.getElementById("reparto-"+r.id); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}
-          onAddReparto={()=>{ const nuovo=mkReparto(); setSopr(s=>({...s,reparti:[...s.reparti,nuovo]})); setTimeout(()=>{ const el=document.getElementById("reparto-"+nuovo.id); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },250); }}/>
+          onAddReparto={()=>{ setSopr(s=>({...s,reparti:[...s.reparti,mkReparto()]})); }}/>
       ))}
 
       {sopr.reparti.length>0&&(
