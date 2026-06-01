@@ -59,7 +59,7 @@ const dbSave = (l) => { try { localStorage.setItem(DB_KEY,JSON.stringify(l)); } 
 
 const mkSopr   = () => ({ id:uid(), azienda:"", indirizzo:"", data:oggi(), tecnico:"", tipo:"Periodico", note:"", reparti:[], concl:"", vecchioVerbale:"", creato:new Date().toISOString() });
 const mkReparto= () => ({ id:uid(), nome:"", foto:[], criticita:[] });
-const mkCrit   = () => ({ id:uid(), titolo:"", descr:"", misure:"", livello:"ELEVATA", stato:"Aperta", reiterata:false, note:"", foto:[] });
+const mkCrit   = () => ({ id:uid(), titolo:"", descr:"", misure:[], livello:"ELEVATA", stato:"Aperta", reiterata:false, tipoReit:"reiterata", note:"", foto:[] });
 
 const livC = (l) => T[l?.toLowerCase()] || T.lieve;
 
@@ -242,8 +242,71 @@ const FotoBox = ({foto,onAdd,onDel,onComm,compact=false}) => {
   );
 };
 
+// ── EDITOR MISURE (lista modificabile con X) ─────────────────
+const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
+  const [load,setLoad]=useState(false);
+  const [err,setErr]=useState("");
+  const misure = Array.isArray(c.misure)?c.misure:(c.misure?String(c.misure).split("\n").filter(x=>x.trim()).map(x=>({id:uid(),testo:x.replace(/^\d+\.?\s*/,"")})):[]);
+
+  const genera=async()=>{
+    setLoad(true);setErr("");
+    try{
+      const ctx=c.descr||c.titolo||"criticita";
+      const rep=repNome||"reparto";
+      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Per questa criticita rilevata nel reparto \""+rep+"\": \""+ctx+"\", scrivi le azioni correttive concrete. REGOLE FERREE: 1) righe numerate 1. 2. 3.; 2) ogni riga inizia con verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); 3) max 4 misure, frasi brevi e dirette; 4) NON citare leggi, decreti, norme UNI, articoli, valori numerici, temperature, scadenze; 5) usa SEMPRE il nome reale del reparto ("+rep+"), MAI placeholder come [area], [locale], [zona], [ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) niente frasi artificiali tipo 'interventi urgenti e inderogabili' o 'compromettendo significativamente'. Rispondi con SOLO le righe numerate, senza titoli, senza simboli #, senza markdown.";
+      const txt=await callAI(prompt);
+      const arr=txt.split("\n").filter(x=>x.trim()).map(x=>({id:uid(),testo:x.replace(/^#+\s*/,"").replace(/^\d+\.?\s*/,"").replace(/\*\*/g,"").trim()})).filter(x=>x.testo);
+      updC(rId,c.id,"misure",arr);
+    }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setErr(ex.message.slice(0,60)); }
+    finally{ setLoad(false); }
+  };
+
+  const updMisura=(mId,testo)=>updC(rId,c.id,"misure",misure.map(m=>m.id===mId?{...m,testo}:m));
+  const delMisura=(mId)=>updC(rId,c.id,"misure",misure.filter(m=>m.id!==mId));
+  const addMisura=()=>updC(rId,c.id,"misure",[...misure,{id:uid(),testo:""}]);
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:"0.6px"}}>Azioni correttive</span>
+        <button onClick={genera} disabled={load}
+          style={{padding:"5px 10px",borderRadius:7,border:"none",background:T.purple,color:"#fff",
+            cursor:load?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:4,opacity:load?0.6:1}}>
+          {load?<Loader2 size={12} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={12}/>}
+          <span style={{fontSize:11,fontWeight:700}}>{misure.length?"Rigenera":"Genera con IA"}</span>
+        </button>
+      </div>
+      {err&&<p style={{fontSize:10,color:"#991B1B",margin:"0 0 6px"}}>{err}</p>}
+
+      {misure.length===0&&<p style={{fontSize:12,color:T.muted,margin:"0 0 8px",fontStyle:"italic"}}>Nessuna misura. Genera con IA o aggiungi manualmente.</p>}
+
+      {misure.map((m,i)=>(
+        <div key={m.id} style={{display:"flex",gap:6,alignItems:"flex-start",marginBottom:6}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.accent,paddingTop:9,flexShrink:0,minWidth:18}}>{i+1}.</span>
+          <textarea value={m.testo} onChange={e=>updMisura(m.id,e.target.value)}
+            placeholder="Descrivi la misura correttiva..." rows={2}
+            style={{flex:1,padding:"8px 10px",fontSize:13,borderRadius:7,border:`1px solid ${T.border}`,
+              outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+          <button onClick={()=>delMisura(m.id)} title="Elimina misura"
+            style={{padding:"7px",borderRadius:7,border:`1px solid #FECACA`,background:"#FEF2F2",
+              cursor:"pointer",flexShrink:0,display:"flex"}}>
+            <X size={14} style={{color:"#991B1B"}}/>
+          </button>
+        </div>
+      ))}
+
+      <button onClick={addMisura}
+        style={{width:"100%",marginTop:4,padding:"7px",borderRadius:7,border:`1px dashed ${T.border}`,
+          background:"#fff",cursor:"pointer",fontSize:12,fontWeight:600,color:T.muted,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+        <Plus size={13}/> Aggiungi misura manualmente
+      </button>
+    </div>
+  );
+};
+
 // ── CRITICITÀ ─────────────────────────────────────────────────
-const CritCard = ({rId,c,updC,delC,setIA}) => {
+const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
   const [open,setOpen]=useState(true);
   const lc=livC(c.livello);
 
@@ -309,18 +372,38 @@ const CritCard = ({rId,c,updC,delC,setIA}) => {
           <Fld label="Descrizione tecnica">
             <AIField value={c.descr} onChange={v=>updC(rId,c.id,"descr",v)}
               placeholder="Descrizione tecnica della criticità rilevata..." rows={3}
-              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per: "${c.titolo||"criticità"}" (livello ${c.livello}). REGOLE: max 3 frasi brevi, terza persona, inizia con formula variata (Es stata riscontrata / E stato rilevato / Si e riscontrata la presenza di / E stata rilevata / Si rileva), descrivi cosa c e fisicamente e perche e pericoloso, NON citare leggi, NO frasi generiche. IMPORTANTE: rispondi con SOLO il testo della descrizione, senza titoli, senza simboli #, senza intestazioni, senza markdown.`}
-              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione: frasi brevi, terza persona, NON citare leggi, max 3 frasi. Testo: "${v}". Rispondi con SOLO la descrizione riscritta, senza titoli, senza simboli #, senza markdown.`}
+              promptEmpty={`Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per la criticita "${c.titolo||"criticità"}" (livello ${c.livello}) rilevata nel reparto "${repNome||"reparto"}". REGOLE FERREE: 1) max 3 frasi brevi e dirette, terza persona; 2) inizia variando tra: "Durante il sopralluogo è stata riscontrata", "È stata rilevata la presenza di", "È stato osservato che", "Si rileva"; puoi aggiungere "Tale condizione può determinare..." o "Tale prassi configura..."; 3) descrivi cosa c'è fisicamente e perche e un rischio; 4) NON citare leggi, decreti, norme UNI, articoli, valori numerici, temperature, superfici, scadenze; 5) usa il nome reale del reparto (${repNome||"reparto"}), MAI placeholder [area][locale][zona][ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) NO frasi artificiali tipo 'interventi urgenti e inderogabili', 'rischi acuti', 'compromettendo significativamente'. Rispondi con SOLO la descrizione, senza titoli, senza simboli #, senza markdown.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione (reparto: ${repNome||"reparto"}): frasi brevi e dirette, terza persona, NON citare leggi ne valori numerici, usa il nome reale del reparto MAI placeholder, 'aerazione' non 'aereazione', max 3 frasi. Testo: "${v}". Rispondi con SOLO la descrizione riscritta, senza titoli, senza simboli #, senza markdown.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
-          <Fld label="Misura preventiva / correttiva">
-            <AIField value={c.misure} onChange={v=>updC(rId,c.id,"misure",v)}
-              placeholder="Misure correttive da adottare..." rows={3}
-              promptEmpty={`Sei il redattore dei verbali Ichnossicurezza S.r.l. Per questa criticita: "${c.descr||c.titolo||"criticita"}", scrivi le misure correttive. FORMATO ESATTO: righe numerate 1. 2. 3. ogni riga inizia con verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare). Max 4 misure. Frasi brevi. NON citare leggi. IMPORTANTE: rispondi con SOLO le righe numerate, senza titoli, senza intestazioni, senza simboli #, senza markdown. Esempio formato corretto: 1. Installare idonea segnaletica di sicurezza.
-2. Verificare periodicamente lo stato dell apparecchiatura.`}
-              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi queste misure: righe numerate 1. 2. 3., verbo concreto, frasi brevi, NON citare leggi. Misure: "${v}". Rispondi con SOLO le righe numerate, niente titoli, niente simboli #.`}
-              onNoKey={()=>setIA(true)}/>
+          <div style={{marginBottom:12}}>
+            <MisureEditor rId={rId} c={c} repNome={repNome} updC={updC} setIA={setIA}/>
+          </div>
+
+          <Fld label="Rilievo reiterato">
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>updC(rId,c.id,"reiterata",false)}
+                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                  border:`1px solid ${!c.reiterata?T.accent:T.border}`,
+                  background:!c.reiterata?"#FEF2F2":"#fff",color:!c.reiterata?T.accent:T.muted}}>
+                No, nuova
+              </button>
+              <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","reiterata");}}
+                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                  border:`1px solid ${c.reiterata&&c.tipoReit!=="parziale"?"#F59E0B":T.border}`,
+                  background:c.reiterata&&c.tipoReit!=="parziale"?"#FFFBEB":"#fff",
+                  color:c.reiterata&&c.tipoReit!=="parziale"?"#92400E":T.muted}}>
+                ⟳ Reiterata
+              </button>
+              <button onClick={()=>{updC(rId,c.id,"reiterata",true);updC(rId,c.id,"tipoReit","parziale");}}
+                style={{padding:"6px 12px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",
+                  border:`1px solid ${c.reiterata&&c.tipoReit==="parziale"?"#F59E0B":T.border}`,
+                  background:c.reiterata&&c.tipoReit==="parziale"?"#FFFBEB":"#fff",
+                  color:c.reiterata&&c.tipoReit==="parziale"?"#92400E":T.muted}}>
+                ⟳ Parzialmente risolta
+              </button>
+            </div>
           </Fld>
 
           <Fld label="Note">
@@ -395,7 +478,7 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
         {tab==="crit"&&(
           <>
             {r.criticita.map(c=>(
-              <CritCard key={c.id} rId={r.id} c={c} updC={updC} delC={delC} setIA={setIA}/>
+              <CritCard key={c.id} rId={r.id} c={c} repNome={r.nome} updC={updC} delC={delC} setIA={setIA}/>
             ))}
             {/* Pulsanti azione in fondo al reparto */}
             <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
@@ -447,15 +530,14 @@ const generaHTML = (s) => {
   // Pulizia testo da markdown
   const clean=(t)=>(t||"").replace(/^#+\s*/gm,"").replace(/\*\*/g,"").replace(/\*/g,"").trim();
 
-  // Formatta misure come elenco
-  const formatMisure=(t)=>{
-    if(!t) return "";
-    const righe=clean(t).split("\n").filter(r=>r.trim());
+  // Formatta misure come elenco (array di {id,testo} o stringa legacy)
+  const formatMisure=(misure)=>{
+    let righe=[];
+    if(Array.isArray(misure)) righe=misure.map(m=>typeof m==="string"?m:m.testo).filter(x=>x&&x.trim());
+    else if(misure) righe=clean(misure).split("\n").filter(r=>r.trim()).map(r=>r.replace(/^\d+\.?\s*/,""));
+    if(!righe.length) return "";
     return `<p style="font-weight:700;margin:10px 0 6px">Si dispone pertanto quanto segue:</p>`+
-      righe.map(r=>{
-        const m=r.match(/^(\d+\.?)\s*(.*)/);
-        return m?`<p style="margin:3px 0"><strong>${m[1]}</strong> ${m[2]}</p>`:`<p style="margin:3px 0">${r}</p>`;
-      }).join("");
+      righe.map((r,i)=>`<p style="margin:3px 0"><strong>${i+1}.</strong> ${clean(r)}</p>`).join("");
   };
 
   return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
@@ -544,7 +626,7 @@ ${s.reparti.map((r,ri)=>{
       <div class="lv-badge" style="color:${txLiv(c.livello)}">
         ${c.livello==="ELEVATA"?"🔴":c.livello==="MEDIA"?"🟠":"🟢"} CRITICITÀ ${c.livello}
       </div>
-      ${c.reiterata?`<div class="reit-banner">⚠ RILIEVO REITERATO – Criticità già segnalata nella Relazione di Sopralluogo precedente e non risolta.</div>`:""}
+      ${c.reiterata?`<div class="reit-banner">${c.tipoReit==="parziale"?"⚠ RILIEVO REITERATO PARZIALMENTE – Criticità già segnalata nella precedente Relazione di Sopralluogo. Gli interventi risultano parzialmente attuati, ma non ancora pienamente risolutivi.":"⚠ RILIEVO REITERATO – Criticità già segnalata nella precedente Relazione di Sopralluogo e non risolta."}</div>`:""}
       <div class="crit-title">${c.titolo||"Criticità"}</div>
       ${clean(c.descr)?`<p style="margin-bottom:10px">${clean(c.descr)}</p>`:""}
       ${formatMisure(c.misure)}
