@@ -78,24 +78,24 @@ const callAI = async (prompt, maxTok=700) => {
   return d.content?.find(b=>b.type==="text")?.text||"";
 };
 
-// AI con visione: analizza un'immagine (data URL base64)
-const callAIVision = async (prompt, dataUrl, maxTok=900) => {
+// AI con visione: analizza una o più immagini (data URL base64). dataUrls puo essere stringa o array.
+const callAIVision = async (prompt, dataUrls, maxTok=900) => {
   const k = akGet();
   if(!k) throw new Error("NO_KEY");
-  // Estraggo media type e base64 dal data URL
-  const m = (dataUrl||"").match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/);
-  if(!m) throw new Error("Immagine non valida");
-  const mediaType = m[1], b64 = m[2];
+  const lista = Array.isArray(dataUrls)?dataUrls:[dataUrls];
+  const imgBlocks=[];
+  for(const du of lista){
+    const m=(du||"").match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/);
+    if(m) imgBlocks.push({type:"image",source:{type:"base64",media_type:m[1],data:m[2]}});
+  }
+  if(!imgBlocks.length) throw new Error("Nessuna immagine valida");
   const r = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"Content-Type":"application/json","x-api-key":k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({
       model:"claude-haiku-4-5-20251001",
       max_tokens:maxTok,
-      messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:mediaType,data:b64}},
-        {type:"text",text:prompt}
-      ]}]
+      messages:[{role:"user",content:[...imgBlocks,{type:"text",text:prompt}]}]
     })
   });
   if(!r.ok){const t=await r.text();throw new Error("Err "+r.status+": "+t.slice(0,80));}
@@ -463,31 +463,82 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
   const [tab,setTab]=useState("crit");
   const [analizzaId,setAnalizzaId]=useState(null);
   const [analizzaMsg,setAnalizzaMsg]=useState("");
+  const [chiediSeparate,setChiediSeparate]=useState(false);
 
-  // Analizza una foto del reparto e crea automaticamente una criticità
+  // Costruisce il prompt di analisi (1 o piu foto)
+  const buildPrompt=(rep,multi)=>{
+    const intro = multi
+      ? "Analizza queste foto scattate nel reparto \""+rep+"\". Le immagini si riferiscono allo STESSO contesto/rilievo: considerale nel loro insieme, individua gli elementi di rischio COMUNI o PREVALENTI e sintetizzali in UNA SOLA criticita, con un unico titolo, una sola descrizione e un unico elenco di misure non ripetitive. NON creare piu criticita. Se pero le foto mostrano situazioni CHIARAMENTE diverse e non riconducibili a un unico rischio, rispondi ESATTAMENTE con: CRITICITA_DIVERSE."
+      : "Analizza questa foto scattata nel reparto \""+rep+"\" e individua UNA criticita di sicurezza realmente visibile.";
+    return "Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. (sicurezza sul lavoro). "+intro+" BASE TECNICA: valuta sulla base del D.Lgs. 81/08 e delle norme tecniche pertinenti, ma NON citare riferimenti normativi nel testo. REGOLE: sii prudente, NON inventare dettagli non visibili; NON inserire valori numerici, leggi, sigle UNI/EN, articoli; usa il nome reale del reparto ("+rep+"), mai placeholder; scrivi 'aerazione' non 'aereazione'; stile tecnico, formale, frasi brevi. Se NON emerge una criticita attendibile, rispondi ESATTAMENTE con: NESSUNA_CRITICITA. Altrimenti rispondi SOLO con questo JSON valido, senza testo aggiuntivo, senza markdown: {\"titolo\":\"TITOLO IN MAIUSCOLO BREVE\",\"livello\":\"ELEVATA o MEDIA o LIEVE\",\"descrizione\":\"descrizione tecnica max 3 frasi\",\"misure\":[\"misura 1 con verbo\",\"misura 2\",\"misura 3\"]}";
+  };
+
+  const parseRisultato=(txt)=>{
+    let obj;
+    try{ obj=JSON.parse(txt.replace(/```json|```/g,"").trim()); }
+    catch{ const mm=txt.match(/\{[\s\S]*\}/); if(mm) obj=JSON.parse(mm[0]); }
+    return obj;
+  };
+
+  // Analizza UNA foto -> crea una criticita
   const analizzaFoto=async(foto)=>{
     if(!akGet()){ setIA(true); return; }
     setAnalizzaId(foto.id); setAnalizzaMsg("");
     try{
       const rep=r.nome||"reparto";
-      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. (sicurezza sul lavoro). Analizza questa foto scattata nel reparto \""+rep+"\" e individua UNA criticita di sicurezza realmente visibile. BASE TECNICA: valuta sulla base del D.Lgs. 81/08 e delle norme tecniche pertinenti, ma NON citare riferimenti normativi nel testo. REGOLE: sii prudente, NON inventare dettagli non visibili nella foto; NON inserire valori numerici, leggi, sigle UNI/EN, articoli; usa il nome reale del reparto ("+rep+"), mai placeholder; scrivi 'aerazione' non 'aereazione'; stile tecnico, formale, frasi brevi. Se dalla foto NON emerge una criticita attendibile, rispondi ESATTAMENTE con: NESSUNA_CRITICITA. Altrimenti rispondi SOLO con questo formato JSON valido, senza testo aggiuntivo, senza markdown: {\"titolo\":\"TITOLO IN MAIUSCOLO BREVE\",\"livello\":\"ELEVATA o MEDIA o LIEVE\",\"descrizione\":\"descrizione tecnica max 3 frasi, inizia con 'Durante l analisi della foto e stata rilevata' o simile\",\"misure\":[\"misura 1 che inizia con verbo\",\"misura 2\",\"misura 3\"]}";
-      const txt=await callAIVision(prompt, foto.data, 900);
+      const txt=await callAIVision(buildPrompt(rep,false), foto.data, 900);
       if(txt.includes("NESSUNA_CRITICITA")){
         setAnalizzaMsg("Dalla foto caricata non emergono elementi sufficienti per individuare una criticità specifica. Si consiglia di integrare il rilievo con una descrizione manuale.");
         return;
       }
-      let obj;
-      try{ obj=JSON.parse(txt.replace(/```json|```/g,"").trim()); }
-      catch{ const mm=txt.match(/\{[\s\S]*\}/); if(mm) obj=JSON.parse(mm[0]); }
+      const obj=parseRisultato(txt);
       if(!obj||!obj.titolo){ setAnalizzaMsg("Analisi non riuscita. Riprova o inserisci il rilievo manualmente."); return; }
       const liv=["ELEVATA","MEDIA","LIEVE"].includes(obj.livello)?obj.livello:"MEDIA";
       const misure=Array.isArray(obj.misure)?obj.misure.filter(x=>x&&x.trim()).map(x=>({id:uid(),testo:String(x).replace(/^\d+\.?\s*/,"").trim()})):[];
       const nuova={...mkCrit(), titolo:(obj.titolo||"").toUpperCase(), livello:liv, descr:obj.descrizione||"", misure, foto:[{...foto}]};
       addC(r.id,nuova);
-      // Rimuovo la foto dalla galleria reparto (ora e collegata alla criticita)
       delFoto(r.id,foto.id);
       setTab("crit");
       setAnalizzaMsg("Criticità generata dalla foto. Controlla e modifica i contenuti prima di esportare.");
+    }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setAnalizzaMsg("Errore: "+ex.message.slice(0,80)); }
+    finally{ setAnalizzaId(null); }
+  };
+
+  // Analizza TUTTE le foto del reparto insieme -> UNA sola criticita
+  const analizzaTutte=async(forzaSeparate)=>{
+    if(!akGet()){ setIA(true); return; }
+    const foto=r.foto||[];
+    if(foto.length===0){ setAnalizzaMsg("Nessuna foto da analizzare in questo reparto."); return; }
+    if(foto.length===1){ return analizzaFoto(foto[0]); }
+    setAnalizzaId("ALL"); setAnalizzaMsg("");
+    try{
+      const rep=r.nome||"reparto";
+      const txt=await callAIVision(buildPrompt(rep,true), foto.map(f=>f.data), 1100);
+      if(txt.includes("NESSUNA_CRITICITA")){
+        setAnalizzaMsg("Dalle foto caricate non emergono elementi sufficienti per individuare una criticità specifica. Si consiglia di integrare il rilievo con una descrizione manuale.");
+        return;
+      }
+      if(txt.includes("CRITICITA_DIVERSE")&&!forzaSeparate){
+        setAnalizzaMsg("Le foto sembrano riferirsi a criticità differenti. Vuoi che vengano analizzate come rilievi separati?");
+        setChiediSeparate(true);
+        return;
+      }
+      if(forzaSeparate){
+        // Analizzo ogni foto singolarmente -> piu criticita
+        for(const f of [...foto]){ await analizzaFoto(f); }
+        setChiediSeparate(false);
+        return;
+      }
+      const obj=parseRisultato(txt);
+      if(!obj||!obj.titolo){ setAnalizzaMsg("Analisi non riuscita. Riprova o inserisci il rilievo manualmente."); return; }
+      const liv=["ELEVATA","MEDIA","LIEVE"].includes(obj.livello)?obj.livello:"MEDIA";
+      const misure=Array.isArray(obj.misure)?obj.misure.filter(x=>x&&x.trim()).map(x=>({id:uid(),testo:String(x).replace(/^\d+\.?\s*/,"").trim()})):[];
+      const nuova={...mkCrit(), titolo:(obj.titolo||"").toUpperCase(), livello:liv, descr:obj.descrizione||"", misure, foto:foto.map(f=>({...f}))};
+      addC(r.id,nuova);
+      // Rimuovo tutte le foto dalla galleria (ora collegate alla criticita)
+      foto.forEach(f=>delFoto(r.id,f.id));
+      setTab("crit");
+      setAnalizzaMsg("Criticità unica generata da "+foto.length+" foto. Controlla e modifica prima di esportare.");
     }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setAnalizzaMsg("Errore: "+ex.message.slice(0,80)); }
     finally{ setAnalizzaId(null); }
   };
@@ -570,13 +621,37 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
         {tab==="foto"&&(
           <>
             <div style={{background:"#EDE9FE",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.purple,lineHeight:1.5}}>
-              💡 Carica una foto e premi <strong>AI</strong> accanto ad essa: l'app analizza l'immagine e crea automaticamente una criticità con titolo, livello, descrizione e misure.
+              💡 <strong>AI</strong> accanto a una foto = crea una criticità da quella singola foto.<br/>
+              💡 <strong>Analizza tutte le foto insieme</strong> = se le foto sono dello stesso rilievo, crea UNA sola criticità.
             </div>
+
+            {(r.foto||[]).length>1&&(
+              <button onClick={()=>analizzaTutte(false)} disabled={analizzaId==="ALL"}
+                style={{width:"100%",marginBottom:10,padding:"10px",borderRadius:8,border:"none",background:T.purple,color:"#fff",
+                  cursor:analizzaId==="ALL"?"wait":"pointer",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:analizzaId==="ALL"?0.6:1}}>
+                {analizzaId==="ALL"?<Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={15}/>}
+                Analizza tutte le foto insieme ({(r.foto||[]).length})
+              </button>
+            )}
+
             {analizzaMsg&&(
-              <div style={{background:analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")?"#FFFBEB":"#F0FDF4",border:`1px solid ${analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")?"#FDE68A":"#BBF7D0"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.text,lineHeight:1.5}}>
+              <div style={{background:analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalle")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")||analizzaMsg.startsWith("Le foto")?"#FFFBEB":"#F0FDF4",border:`1px solid ${analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalle")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")||analizzaMsg.startsWith("Le foto")?"#FDE68A":"#BBF7D0"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.text,lineHeight:1.5}}>
                 {analizzaMsg}
+                {chiediSeparate&&(
+                  <div style={{display:"flex",gap:8,marginTop:8}}>
+                    <button onClick={()=>{setChiediSeparate(false);analizzaTutte(true);}}
+                      style={{padding:"5px 12px",borderRadius:6,border:"none",background:T.accent,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      Sì, rilievi separati
+                    </button>
+                    <button onClick={()=>{setChiediSeparate(false);setAnalizzaMsg("");}}
+                      style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${T.border}`,background:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      No, annulla
+                    </button>
+                  </div>
+                )}
               </div>
             )}
+
             <FotoBox foto={r.foto||[]}
               onAdd={f=>addFoto(r.id,f)}
               onDel={fId=>delFoto(r.id,fId)}
