@@ -78,6 +78,32 @@ const callAI = async (prompt, maxTok=700) => {
   return d.content?.find(b=>b.type==="text")?.text||"";
 };
 
+// AI con visione: analizza un'immagine (data URL base64)
+const callAIVision = async (prompt, dataUrl, maxTok=900) => {
+  const k = akGet();
+  if(!k) throw new Error("NO_KEY");
+  // Estraggo media type e base64 dal data URL
+  const m = (dataUrl||"").match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/);
+  if(!m) throw new Error("Immagine non valida");
+  const mediaType = m[1], b64 = m[2];
+  const r = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":k,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({
+      model:"claude-haiku-4-5-20251001",
+      max_tokens:maxTok,
+      messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:mediaType,data:b64}},
+        {type:"text",text:prompt}
+      ]}]
+    })
+  });
+  if(!r.ok){const t=await r.text();throw new Error("Err "+r.status+": "+t.slice(0,80));}
+  const d=await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return d.content?.find(b=>b.type==="text")?.text||"";
+};
+
 // ── UI BASE ───────────────────────────────────────────────────
 const Btn = ({children,onClick,v="p",sz="m",icon,disabled,full,style:sx={}}) => {
   const S={
@@ -191,7 +217,7 @@ const ModalIA = ({onClose}) => {
 };
 
 // ── FOTO ─────────────────────────────────────────────────────
-const FotoBox = ({foto,onAdd,onDel,onComm,compact=false}) => {
+const FotoBox = ({foto,onAdd,onDel,onComm,compact=false,onAnalizza,analizzaId}) => {
   const idC=useState(()=>"fc"+uid())[0];
   const idG=useState(()=>"fg"+uid())[0];
   const onFile=async(e)=>{
@@ -233,9 +259,19 @@ const FotoBox = ({foto,onAdd,onDel,onComm,compact=false}) => {
               style={{width:"100%",padding:"4px 8px",fontSize:12,borderRadius:6,
                 border:`1px solid ${T.border}`,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
-          <button onClick={()=>onDel(f.id)} style={{border:"none",background:"transparent",cursor:"pointer"}}>
-            <X size={13} style={{color:"#991B1B"}}/>
-          </button>
+          <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
+            {onAnalizza&&(
+              <button onClick={()=>onAnalizza(f)} disabled={analizzaId===f.id} title="Analizza la foto con l'IA e crea una criticità"
+                style={{border:"none",background:T.purple,borderRadius:6,padding:"5px 8px",cursor:analizzaId===f.id?"wait":"pointer",
+                  display:"flex",alignItems:"center",gap:3,opacity:analizzaId===f.id?0.6:1}}>
+                {analizzaId===f.id?<Loader2 size={12} style={{color:"#fff",animation:"spin 1s linear infinite"}}/>:<Sparkles size={12} style={{color:"#fff"}}/>}
+                <span style={{fontSize:10,fontWeight:700,color:"#fff"}}>AI</span>
+              </button>
+            )}
+            <button onClick={()=>onDel(f.id)} title="Elimina foto" style={{border:`1px solid ${T.border}`,background:"#fff",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",justifyContent:"center"}}>
+              <X size={13} style={{color:"#991B1B"}}/>
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -254,7 +290,7 @@ const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
     try{
       const ctx=c.descr||c.titolo||"criticita";
       const rep=repNome||"reparto";
-      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Per questa criticita rilevata nel reparto \""+rep+"\": \""+ctx+"\", scrivi le azioni correttive concrete. REGOLE FERREE: 1) righe numerate 1. 2. 3.; 2) ogni riga inizia con verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); 3) max 4 misure, frasi brevi e dirette; 4) NON citare leggi, decreti, norme UNI, articoli, valori numerici, temperature, scadenze; 5) usa SEMPRE il nome reale del reparto ("+rep+"), MAI placeholder come [area], [locale], [zona], [ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) niente frasi artificiali tipo 'interventi urgenti e inderogabili' o 'compromettendo significativamente'. Rispondi con SOLO le righe numerate, senza titoli, senza simboli #, senza markdown.";
+      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Per questa criticita rilevata nel reparto \""+rep+"\": \""+ctx+"\", scrivi le azioni correttive concrete. BASE TECNICA: definisci le azioni correttive sulla base del D.Lgs. 81/08 e delle pertinenti norme tecniche di sicurezza, in modo che siano tecnicamente corrette ed efficaci, MA non citare mai nel testo i riferimenti normativi. REGOLE FERREE: 1) righe numerate 1. 2. 3.; 2) ogni riga inizia con verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); 3) max 4 misure, frasi brevi e dirette; 4) NON citare nel testo leggi, decreti, numeri di articoli, sigle di norme UNI/EN, D.M., valori numerici, temperature, scadenze; 5) usa SEMPRE il nome reale del reparto ("+rep+"), MAI placeholder come [area], [locale], [zona], [ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) niente frasi artificiali tipo 'interventi urgenti e inderogabili' o 'compromettendo significativamente'. Rispondi con SOLO le righe numerate, senza titoli, senza simboli #, senza markdown.";
       const txt=await callAI(prompt);
       const arr=txt.split("\n").filter(x=>x.trim()).map(x=>({id:uid(),testo:x.replace(/^#+\s*/,"").replace(/^\d+\.?\s*/,"").replace(/\*\*/g,"").trim()})).filter(x=>x.testo);
       updC(rId,c.id,"misure",arr);
@@ -270,7 +306,7 @@ const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
     setLoadM(mId);setErr("");
     try{
       const rep=repNome||"reparto";
-      const prompt="Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa misura correttiva in modo tecnico, semplice e diretto, senza renderla lunga. Reparto: \""+rep+"\". REGOLE: inizia con un verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); UNA sola frase breve; NON citare leggi, decreti, norme UNI, valori numerici; usa il nome reale del reparto MAI placeholder; 'aerazione' non 'aereazione'. Misura: \""+testo+"\". Rispondi con SOLO la misura riscritta, senza numerazione, senza simboli #.";
+      const prompt="Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa misura correttiva in modo tecnico, semplice e diretto, senza renderla lunga. Reparto: \""+rep+"\". BASE TECNICA: basati sul D.Lgs. 81/08 e sulle norme tecniche pertinenti per rendere la misura tecnicamente corretta, MA non citare mai i riferimenti normativi nel testo. REGOLE: inizia con un verbo (Provvedere, Installare, Verificare, Sostituire, Apporre, Garantire, Disporre, Rimuovere, Effettuare, Valutare); UNA sola frase breve; NON citare nel testo leggi, decreti, sigle UNI/EN, articoli, valori numerici; usa il nome reale del reparto MAI placeholder; 'aerazione' non 'aereazione'. Misura: \""+testo+"\". Rispondi con SOLO la misura riscritta, senza numerazione, senza simboli #.";
       const txt=await callAI(prompt,200);
       const pulito=txt.replace(/^#+\s*/,"").replace(/^\d+\.?\s*/,"").replace(/\*\*/g,"").trim();
       updMisura(mId,pulito);
@@ -399,8 +435,8 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
           <Fld label="Descrizione tecnica">
             <AIField value={c.descr} onChange={v=>updC(rId,c.id,"descr",v)}
               placeholder="Descrizione tecnica della criticità rilevata..." rows={3}
-              promptEmpty={`Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per la criticita "${c.titolo||"criticità"}" (livello ${c.livello}) rilevata nel reparto "${repNome||"reparto"}". REGOLE FERREE: 1) max 3 frasi brevi e dirette, terza persona; 2) inizia variando tra: "Durante il sopralluogo è stata riscontrata", "È stata rilevata la presenza di", "È stato osservato che", "Si rileva"; puoi aggiungere "Tale condizione può determinare..." o "Tale prassi configura..."; 3) descrivi cosa c'è fisicamente e perche e un rischio; 4) NON citare leggi, decreti, norme UNI, articoli, valori numerici, temperature, superfici, scadenze; 5) usa il nome reale del reparto (${repNome||"reparto"}), MAI placeholder [area][locale][zona][ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) NO frasi artificiali tipo 'interventi urgenti e inderogabili', 'rischi acuti', 'compromettendo significativamente'. Rispondi con SOLO la descrizione, senza titoli, senza simboli #, senza markdown.`}
-              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione (reparto: ${repNome||"reparto"}): frasi brevi e dirette, terza persona, NON citare leggi ne valori numerici, usa il nome reale del reparto MAI placeholder, 'aerazione' non 'aereazione', max 3 frasi. Testo: "${v}". Rispondi con SOLO la descrizione riscritta, senza titoli, senza simboli #, senza markdown.`}
+              promptEmpty={`Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. Scrivi la descrizione tecnica per la criticita "${c.titolo||"criticità"}" (livello ${c.livello}) rilevata nel reparto "${repNome||"reparto"}". BASE TECNICA: valuta la criticità sulla base del D.Lgs. 81/08 e delle pertinenti norme tecniche di sicurezza, in modo che il rilievo sia tecnicamente corretto e pertinente, MA non citare mai nel testo i riferimenti normativi. REGOLE FERREE: 1) max 3 frasi brevi e dirette, terza persona; 2) inizia variando tra: "Durante il sopralluogo è stata riscontrata", "È stata rilevata la presenza di", "È stato osservato che", "Si rileva"; puoi aggiungere "Tale condizione può determinare..." o "Tale prassi configura..."; 3) descrivi cosa c'è fisicamente e perche e un rischio; 4) NON citare nel testo leggi, decreti, numeri di articoli, sigle di norme UNI/EN, D.M., valori numerici, temperature, superfici, scadenze; 5) usa il nome reale del reparto (${repNome||"reparto"}), MAI placeholder [area][locale][zona][ambiente]; 6) scrivi 'aerazione' non 'aereazione'; 7) NO frasi artificiali tipo 'interventi urgenti e inderogabili', 'rischi acuti', 'compromettendo significativamente'. Rispondi con SOLO la descrizione, senza titoli, senza simboli #, senza markdown.`}
+              promptFull={v=>`Sei il redattore dei verbali Ichnossicurezza S.r.l. Riscrivi questa descrizione (reparto: ${repNome||"reparto"}). Basati sul D.Lgs. 81/08 e sulle norme tecniche pertinenti per renderla tecnicamente corretta, ma NON citare i riferimenti normativi nel testo. Frasi brevi e dirette, terza persona, NON citare leggi ne sigle UNI/EN ne valori numerici, usa il nome reale del reparto MAI placeholder, 'aerazione' non 'aereazione', max 3 frasi. Testo: "${v}". Rispondi con SOLO la descrizione riscritta, senza titoli, senza simboli #, senza markdown.`}
               onNoKey={()=>setIA(true)}/>
           </Fld>
 
@@ -425,6 +461,37 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
 const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,setIA,onScrollTop,onAddReparto}) => {
   const topRef = useState(()=>({ current:null }))[0];
   const [tab,setTab]=useState("crit");
+  const [analizzaId,setAnalizzaId]=useState(null);
+  const [analizzaMsg,setAnalizzaMsg]=useState("");
+
+  // Analizza una foto del reparto e crea automaticamente una criticità
+  const analizzaFoto=async(foto)=>{
+    if(!akGet()){ setIA(true); return; }
+    setAnalizzaId(foto.id); setAnalizzaMsg("");
+    try{
+      const rep=r.nome||"reparto";
+      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. (sicurezza sul lavoro). Analizza questa foto scattata nel reparto \""+rep+"\" e individua UNA criticita di sicurezza realmente visibile. BASE TECNICA: valuta sulla base del D.Lgs. 81/08 e delle norme tecniche pertinenti, ma NON citare riferimenti normativi nel testo. REGOLE: sii prudente, NON inventare dettagli non visibili nella foto; NON inserire valori numerici, leggi, sigle UNI/EN, articoli; usa il nome reale del reparto ("+rep+"), mai placeholder; scrivi 'aerazione' non 'aereazione'; stile tecnico, formale, frasi brevi. Se dalla foto NON emerge una criticita attendibile, rispondi ESATTAMENTE con: NESSUNA_CRITICITA. Altrimenti rispondi SOLO con questo formato JSON valido, senza testo aggiuntivo, senza markdown: {\"titolo\":\"TITOLO IN MAIUSCOLO BREVE\",\"livello\":\"ELEVATA o MEDIA o LIEVE\",\"descrizione\":\"descrizione tecnica max 3 frasi, inizia con 'Durante l analisi della foto e stata rilevata' o simile\",\"misure\":[\"misura 1 che inizia con verbo\",\"misura 2\",\"misura 3\"]}";
+      const txt=await callAIVision(prompt, foto.data, 900);
+      if(txt.includes("NESSUNA_CRITICITA")){
+        setAnalizzaMsg("Dalla foto caricata non emergono elementi sufficienti per individuare una criticità specifica. Si consiglia di integrare il rilievo con una descrizione manuale.");
+        return;
+      }
+      let obj;
+      try{ obj=JSON.parse(txt.replace(/```json|```/g,"").trim()); }
+      catch{ const mm=txt.match(/\{[\s\S]*\}/); if(mm) obj=JSON.parse(mm[0]); }
+      if(!obj||!obj.titolo){ setAnalizzaMsg("Analisi non riuscita. Riprova o inserisci il rilievo manualmente."); return; }
+      const liv=["ELEVATA","MEDIA","LIEVE"].includes(obj.livello)?obj.livello:"MEDIA";
+      const misure=Array.isArray(obj.misure)?obj.misure.filter(x=>x&&x.trim()).map(x=>({id:uid(),testo:String(x).replace(/^\d+\.?\s*/,"").trim()})):[];
+      const nuova={...mkCrit(), titolo:(obj.titolo||"").toUpperCase(), livello:liv, descr:obj.descrizione||"", misure, foto:[{...foto}]};
+      addC(r.id,nuova);
+      // Rimuovo la foto dalla galleria reparto (ora e collegata alla criticita)
+      delFoto(r.id,foto.id);
+      setTab("crit");
+      setAnalizzaMsg("Criticità generata dalla foto. Controlla e modifica i contenuti prima di esportare.");
+    }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setAnalizzaMsg("Errore: "+ex.message.slice(0,80)); }
+    finally{ setAnalizzaId(null); }
+  };
+
   const cAp=r.criticita.filter(c=>c.stato==="Aperta");
   const nEL=cAp.filter(c=>c.livello==="ELEVATA").length;
   const nME=cAp.filter(c=>c.livello==="MEDIA").length;
@@ -501,10 +568,22 @@ const RepartoCard = ({r,ri,updR,updC,addC,delC,addFoto,delFoto,commFoto,delR,set
         )}
 
         {tab==="foto"&&(
-          <FotoBox foto={r.foto||[]}
-            onAdd={f=>addFoto(r.id,f)}
-            onDel={fId=>delFoto(r.id,fId)}
-            onComm={(fId,comm)=>commFoto(r.id,fId,comm)}/>
+          <>
+            <div style={{background:"#EDE9FE",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.purple,lineHeight:1.5}}>
+              💡 Carica una foto e premi <strong>AI</strong> accanto ad essa: l'app analizza l'immagine e crea automaticamente una criticità con titolo, livello, descrizione e misure.
+            </div>
+            {analizzaMsg&&(
+              <div style={{background:analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")?"#FFFBEB":"#F0FDF4",border:`1px solid ${analizzaMsg.startsWith("Errore")||analizzaMsg.startsWith("Dalla")||analizzaMsg.startsWith("Analisi")?"#FDE68A":"#BBF7D0"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.text,lineHeight:1.5}}>
+                {analizzaMsg}
+              </div>
+            )}
+            <FotoBox foto={r.foto||[]}
+              onAdd={f=>addFoto(r.id,f)}
+              onDel={fId=>delFoto(r.id,fId)}
+              onComm={(fId,comm)=>commFoto(r.id,fId,comm)}
+              onAnalizza={analizzaFoto}
+              analizzaId={analizzaId}/>
+          </>
         )}
       </div>
     </Card>
