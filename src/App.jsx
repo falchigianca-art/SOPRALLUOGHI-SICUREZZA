@@ -363,7 +363,42 @@ const MisureEditor = ({rId,c,repNome,updC,setIA}) => {
 // ── CRITICITÀ ─────────────────────────────────────────────────
 const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
   const [open,setOpen]=useState(true);
+  const [analizzaLoad,setAnalizzaLoad]=useState(false);
+  const [analizzaMsg,setAnalizzaMsg]=useState("");
+  const [chiediSeparate,setChiediSeparate]=useState(false);
   const lc=livC(c.livello);
+
+  // Analizza TUTTE le foto della criticità e compila titolo/livello/descrizione/misure di QUESTA criticità
+  const analizzaFotoCrit=async(forza)=>{
+    if(!akGet()){ setIA(true); return; }
+    const foto=c.foto||[];
+    if(foto.length===0){ setAnalizzaMsg("Carica almeno una foto in questa criticità."); return; }
+    setAnalizzaLoad(true); setAnalizzaMsg("");
+    try{
+      const rep=repNome||"reparto";
+      const multi=foto.length>1;
+      const intro=multi
+        ? "Analizza queste foto: appartengono TUTTE alla STESSA criticità e mostrano lo stesso rilievo/area da angolazioni o punti diversi. Consideralo come un unico insieme fotografico: individua i rischi COMUNI o PREVALENTI visibili e sintetizzali in UN SOLO rilievo. NON creare piu criticita. Se pero le foto mostrano situazioni CHIARAMENTE diverse e non riconducibili allo stesso rischio, rispondi ESATTAMENTE con: CRITICITA_DIVERSE."
+        : "Analizza questa foto e individua la criticita di sicurezza visibile.";
+      const prompt="Sei il redattore dei verbali di sopralluogo Ichnossicurezza S.r.l. (sicurezza sul lavoro). "+intro+" Reparto: \""+rep+"\". BASE TECNICA: valuta sulla base del D.Lgs. 81/08 e delle norme tecniche pertinenti, ma NON citare riferimenti normativi nel testo. REGOLE: sii prudente, NON inventare dettagli non visibili; NON inserire valori numerici, leggi, sigle UNI/EN, articoli; usa il nome reale del reparto ("+rep+"), mai placeholder; scrivi 'aerazione' non 'aereazione'; stile tecnico, formale, frasi brevi; la descrizione puo iniziare con 'Durante l analisi delle foto caricate e stata rilevata, presso il reparto "+rep+",'. Se NON emerge criticita attendibile rispondi ESATTAMENTE: NESSUNA_CRITICITA. Altrimenti rispondi SOLO con questo JSON valido, senza markdown: {\"titolo\":\"TITOLO MAIUSCOLO BREVE\",\"livello\":\"ELEVATA o MEDIA o LIEVE\",\"descrizione\":\"descrizione tecnica max 4 frasi\",\"misure\":[\"misura 1 con verbo\",\"misura 2\",\"misura 3\",\"misura 4\"]}";
+      const txt=await callAIVision(prompt, foto.map(f=>f.data), 1100);
+      if(txt.includes("NESSUNA_CRITICITA")){ setAnalizzaMsg("Dalle foto non emergono elementi sufficienti per individuare una criticità. Inserisci il rilievo manualmente."); return; }
+      if(txt.includes("CRITICITA_DIVERSE")&&!forza){ setAnalizzaMsg("Le foto caricate sembrano riferirsi a criticità differenti. Vuoi generare comunque un unico rilievo complessivo?"); setChiediSeparate(true); return; }
+      let obj;
+      try{ obj=JSON.parse(txt.replace(/```json|```/g,"").trim()); }
+      catch{ const mm=txt.match(/\{[\s\S]*\}/); if(mm) obj=JSON.parse(mm[0]); }
+      if(!obj||!obj.titolo){ setAnalizzaMsg("Analisi non riuscita. Riprova o inserisci il rilievo manualmente."); return; }
+      const liv=["ELEVATA","MEDIA","LIEVE"].includes(obj.livello)?obj.livello:"MEDIA";
+      const misure=Array.isArray(obj.misure)?obj.misure.filter(x=>x&&x.trim()).map(x=>({id:uid(),testo:String(x).replace(/^\d+\.?\s*/,"").trim()})):[];
+      updC(rId,c.id,"titolo",(obj.titolo||"").toUpperCase());
+      updC(rId,c.id,"livello",liv);
+      updC(rId,c.id,"descr",obj.descrizione||"");
+      updC(rId,c.id,"misure",misure);
+      setChiediSeparate(false);
+      setAnalizzaMsg("Criticità generata da "+foto.length+(foto.length>1?" foto":" foto")+". Controlla e modifica i contenuti prima di esportare.");
+    }catch(ex){ if(ex.message==="NO_KEY")setIA(true); else setAnalizzaMsg("Errore: "+ex.message.slice(0,80)); }
+    finally{ setAnalizzaLoad(false); }
+  };
 
   return (
     <div style={{border:`1px solid ${c.reiterata?"#F59E0B":lc.border}`,borderRadius:8,
@@ -445,7 +480,32 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
           </div>
 
 
-          <Fld label={`Foto (${(c.foto||[]).length})`}>
+          <Fld label={`Foto della criticità (${(c.foto||[]).length})`}>
+            {(c.foto||[]).length>0&&(
+              <button onClick={()=>analizzaFotoCrit(false)} disabled={analizzaLoad}
+                style={{width:"100%",marginBottom:10,padding:"10px",borderRadius:8,border:"none",background:T.purple,color:"#fff",
+                  cursor:analizzaLoad?"wait":"pointer",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:analizzaLoad?0.6:1}}>
+                {analizzaLoad?<Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={15}/>}
+                Genera criticità dalle foto ({(c.foto||[]).length})
+              </button>
+            )}
+            {analizzaMsg&&(
+              <div style={{background:analizzaMsg.startsWith("Criticità")?"#F0FDF4":"#FFFBEB",border:`1px solid ${analizzaMsg.startsWith("Criticità")?"#BBF7D0":"#FDE68A"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:T.text,lineHeight:1.5}}>
+                {analizzaMsg}
+                {chiediSeparate&&(
+                  <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                    <button onClick={()=>analizzaFotoCrit(true)}
+                      style={{padding:"5px 12px",borderRadius:6,border:"none",background:T.purple,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      Sì, un unico rilievo
+                    </button>
+                    <button onClick={()=>{setChiediSeparate(false);setAnalizzaMsg("");}}
+                      style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${T.border}`,background:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      Annulla
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <FotoBox compact foto={c.foto||[]}
               onAdd={f=>updC(rId,c.id,"foto",[...(c.foto||[]),f])}
               onDel={fId=>updC(rId,c.id,"foto",(c.foto||[]).filter(x=>x.id!==fId))}
