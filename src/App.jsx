@@ -486,7 +486,7 @@ const CritCard = ({rId,c,repNome,updC,delC,setIA}) => {
                 style={{width:"100%",marginBottom:10,padding:"10px",borderRadius:8,border:"none",background:T.purple,color:"#fff",
                   cursor:analizzaLoad?"wait":"pointer",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:analizzaLoad?0.6:1}}>
                 {analizzaLoad?<Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/>:<Sparkles size={15}/>}
-                Genera criticità dalle foto ({(c.foto||[]).length})
+                {(c.foto||[]).length>1?`Analizza le ${(c.foto||[]).length} foto della criticità con AI`:"Genera criticità dalla foto con AI"}
               </button>
             )}
             {analizzaMsg&&(
